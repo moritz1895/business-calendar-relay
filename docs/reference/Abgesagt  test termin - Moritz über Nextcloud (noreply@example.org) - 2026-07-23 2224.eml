@@ -1,0 +1,402 @@
+Return-Path: <noreply@example.org>
+X-Spam-Checker-Version: SpamAssassin 3.4.6 (2021-04-09) on mx.example.net
+X-Spam-Level: 
+X-Spam-Status: No, score=-1.0 required=7.0 tests=ALL_TRUSTED,HTML_MESSAGE,
+	SPF_PASS autolearn=ham autolearn_force=no version=3.4.6
+X-Original-To: moritz@example.com
+Delivered-To: moritz@example.com
+Received: from collab.example.org (unknown [IPv6:2001:db8::1])
+	by mx.example.net (Postfix) with ESMTPSA id DA6001C36E7
+	for <moritz@example.com>; Thu, 23 Jul 2026 22:24:58 +0200 (CEST)
+Authentication-Results: mx;
+        spf=pass (sender IP is 2001:db8::1) smtp.mailfrom=noreply@example.org smtp.helo=collab.example.org
+Received-SPF: pass (mx: connection is authenticated)
+Subject: Abgesagt: test termin
+To: "moritz@example.com" <moritz@example.com>
+From: Moritz =?utf-8?Q?=C3=BCber?= Nextcloud <noreply@example.org>
+Reply-To: Moritz <moritz@example.org>
+Message-ID: <01487778a319028dca86f4ba98641b52@example.org>
+MIME-Version: 1.0
+Date: Thu, 23 Jul 2026 20:24:58 +0000
+Content-Type: multipart/mixed; boundary=DqHUjaCG
+X-PPP-Message-ID: 
+ <178483829900.3459562.10738210382992145632@mx.example.net>
+X-PPP-Vhost: example.org
+X-Rspamd-Server: rspamd-worker-8404
+X-Spamd-Result: default: False [-5.43 / 15.00];
+	BAYES_HAM(-5.50)[100.00%];
+	MIME_GOOD(-0.10)[multipart/mixed,multipart/alternative,text/plain];
+	MIME_BASE64_TEXT(0.10)[];
+	MANY_INVISIBLE_PARTS(0.05)[1];
+	R_MIXED_CHARSET(0.02)[subject];
+	FROM_EQ_ENVFROM(0.00)[];
+	TO_MATCH_ENVRCPT_ALL(0.00)[];
+	MIME_TRACE(0.00)[0:+,1:+,2:+,3:~,4:~];
+	ASN(0.00)[asn:197540, ipnet:2a03:4000::/32, country:DE];
+	RCVD_COUNT_ZERO(0.00)[0];
+	FROM_HAS_DN(0.00)[];
+	FUZZY_BLOCKED(0.00)[rspamd.com];
+	MID_RHS_MATCH_FROM(0.00)[];
+	HAS_REPLYTO(0.00)[moritz@example.org];
+	TO_DN_EQ_ADDR_ALL(0.00)[];
+	REPLYTO_DOM_EQ_FROM_DOM(0.00)[];
+	RCPT_COUNT_ONE(0.00)[1];
+	ARC_NA(0.00)[]
+X-Rspamd-Queue-Id: DA6001C36E7
+X-NC-CID: Afw7mfpeSVJwy6T+9mXO6l4UfFjv29f6UeeehTdxLll0LPk=
+X-MORS-Enabled: yes
+X-MORS-DOMAIN: example.org
+X-MORS-HOSTING: hosting000000
+X-MORS-USER: hosting000000
+
+
+--DqHUjaCG
+Content-Type: multipart/alternative; boundary=suX2qA1o
+
+
+--suX2qA1o
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+"test termin" wurde abgesagt.
+
+         Titel: test termin
+          Wann: In 12 Stunden amFreitag, 24. Juli 2026 zwischen 11:00 - 12:=
+00 (Europe/Berlin)
+
+--=20
+Nextcloud - ein sicherer Ort f=C3=BCr all deine Daten
+Dies ist eine automatisch gesendete E-Mail. Bitte antworte nicht auf diese =
+E-Mail.
+
+--suX2qA1o
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.=
+w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns=3D"http://www.w3.org/1999/xhtml" lang=3D"en" xml:lang=3D"en" st=
+yle=3D"-webkit-font-smoothing:antialiased;background:#fff!important">
+<head>
+=09<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dutf-8"=
+>
+=09<meta name=3D"viewport" content=3D"width=3Ddevice-width">
+=09<title></title>
+=09<style type=3D"text/css">@media only screen{html{min-height:100%;backgro=
+und:#fff}}@media only screen and (max-width:610px){table.body img{width:aut=
+o;height:auto}table.body center{min-width:0!important}table.body .container=
+{width:95%!important}table.body .columns{height:auto!important;-moz-box-siz=
+ing:border-box;-webkit-box-sizing:border-box;box-sizing:border-box;padding-=
+left:30px!important;padding-right:30px!important}th.small-12{display:inline=
+-block!important;width:100%!important}table.menu{width:100%!important}table=
+.menu td,table.menu th{width:auto!important;display:inline-block!important}=
+table.menu.vertical td,table.menu.vertical th{display:block!important}table=
+.menu[align=3Dcenter]{width:auto!important}}</style>
+</head>
+<body style=3D"-moz-box-sizing:border-box;-ms-text-size-adjust:100%;-webkit=
+-box-sizing:border-box;-webkit-font-smoothing:antialiased;-webkit-text-size=
+-adjust:100%;margin:0;background:#fff!important;box-sizing:border-box;color=
+:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxy=
+gen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;=
+font-weight:400;line-height:1.3;margin:0;min-width:100%;padding:0;text-alig=
+n:left;width:100%!important">
+=09<span class=3D"preheader" style=3D"color:#F5F5F5;display:none!important;=
+font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all!importa=
+nt;opacity:0;overflow:hidden;visibility:hidden">
+=09</span>
+=09<table class=3D"body" style=3D"-webkit-font-smoothing:antialiased;margin=
+:0;background:#fff;border-collapse:collapse;border-spacing:0;color:#0a0a0a;=
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,=
+Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weig=
+ht:400;line-height:1.3;margin:0;padding:0;text-align:left;vertical-align:to=
+p;width:100%">
+=09=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09=09<td class=3D"center" align=3D"center" valign=3D"top" style=3D"-moz=
+-hyphens:auto;-webkit-hyphens:auto;Margin:0;border-collapse:collapse!import=
+ant;color:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',R=
+oboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-s=
+ize:16px;font-weight:400;hyphens:auto;line-height:1.3;margin:0;padding:0;te=
+xt-align:left;vertical-align:top;word-wrap:break-word">
+=09=09=09=09<center data-parsed=3D"" style=3D"min-width:580px;width:100%"><=
+table align=3D"center" class=3D"wrapper header float-center" style=3D"Margi=
+n:0 auto;background:#fff;border-collapse:collapse;border-spacing:0;float:no=
+ne;margin:0 auto;padding:0;text-align:center;vertical-align:top;width:100%"=
+>
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td class=3D"wrapper-inner" style=3D"-moz-hyphens:auto;-webkit-hyphen=
+s:auto;Margin:0;border-collapse:collapse!important;color:#0a0a0a;font-famil=
+y:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Can=
+tarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:400;hyp=
+hens:auto;line-height:1.3;margin:0;padding:20px;text-align:left;vertical-al=
+ign:top;word-wrap:break-word">
+=09=09=09<table align=3D"center" class=3D"container" style=3D"Margin:0 auto=
+;background:0 0;border-collapse:collapse;border-spacing:0;margin:0 auto;pad=
+ding:0;text-align:inherit;vertical-align:top;width:150px">
+=09=09=09=09<tbody>
+=09=09=09=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09=09=09=09<td style=3D"-moz-hyphens:auto;-webkit-hyphens:auto;Margin:0=
+;border-collapse:collapse!important;color:#0a0a0a;font-family:-apple-system=
+,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helveti=
+ca Neue',Arial,sans-serif;font-size:16px;font-weight:400;hyphens:auto;line-=
+height:1.3;margin:0;padding:0;text-align:left;vertical-align:top;word-wrap:=
+break-word">
+=09=09=09=09=09=09<table class=3D"row collapse" style=3D"border-collapse:co=
+llapse;border-spacing:0;display:table;padding:0;position:relative;text-alig=
+n:left;vertical-align:top;width:100%">
+=09=09=09=09=09=09=09<tbody>
+=09=09=09=09=09=09=09<tr style=3D"padding:0;text-align:left;vertical-align:=
+top">
+=09=09=09=09=09=09=09=09<center data-parsed=3D"" style=3D"background-color:=
+#00679e;min-width:175px;max-height:175px; padding:35px 0px;border-radius:20=
+0px">
+=09=09=09=09=09=09=09=09=09<img class=3D"logo float-center" src=3D"https://=
+collab.example.org/core/img/logo/logo.png?v=3D4" alt=3D"Nextcloud" align=3D=
+"center" style=3D"-ms-interpolation-mode:bicubic;clear:both;display:block;f=
+loat:none;margin:0 auto;outline:0;text-align:center;text-decoration:none;ma=
+x-height:105px;max-width:105px;width:auto;height:auto" width=3D"105" height=
+=3D"50">
+=09=09=09=09=09=09=09=09</center>
+=09=09=09=09=09=09=09</tr>
+=09=09=09=09=09=09=09</tbody>
+=09=09=09=09=09=09</table>
+=09=09=09=09=09</td>
+=09=09=09=09</tr>
+=09=09=09=09</tbody>
+=09=09=09</table>
+=09=09</td>
+=09</tr>
+</table>
+<table class=3D"spacer float-center" style=3D"Margin:0 auto;border-collapse=
+:collapse;border-spacing:0;float:none;margin:0 auto;padding:0;text-align:ce=
+nter;vertical-align:top;width:100%">
+=09<tbody>
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td height=3D"40px" style=3D"-moz-hyphens:auto;-webkit-hyphens:auto;M=
+argin:0;border-collapse:collapse!important;color:#0a0a0a;font-size:80px;fon=
+t-weight:400;hyphens:auto;line-height:80px;margin:0;mso-line-height-rule:ex=
+actly;padding:0;text-align:left;vertical-align:top;word-wrap:break-word">&#=
+xA0;</td>
+=09</tr>
+=09</tbody>
+</table><table align=3D"center" class=3D"container main-heading float-cente=
+r" style=3D"Margin:0 auto;background:0 0!important;border-collapse:collapse=
+;border-spacing:0;float:none;margin:0 auto;padding:0;text-align:center;vert=
+ical-align:top;width:580px">
+=09<tbody>
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td style=3D"-moz-hyphens:auto;-webkit-hyphens:auto;Margin:0;border-c=
+ollapse:collapse!important;color:#0a0a0a;font-family:-apple-system,BlinkMac=
+SystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',=
+Arial,sans-serif;font-size:16px;font-weight:400;hyphens:auto;line-height:1.=
+3;margin:0;padding:0;text-align:left;vertical-align:top;word-wrap:break-wor=
+d">
+=09=09=09<h1 class=3D"text-center" style=3D"Margin:0;Margin-bottom:10px;col=
+or:inherit;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,O=
+xygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:24p=
+x;font-weight:400;line-height:1.3;margin:0;padding:0;text-align:center;word=
+-wrap:normal">&quot;test termin&quot; wurde abgesagt.</h1>
+=09=09</td>
+=09</tr>
+=09</tbody>
+</table>
+<table class=3D"spacer float-center" style=3D"Margin:0 auto;border-collapse=
+:collapse;border-spacing:0;float:none;margin:0 auto;padding:0;text-align:ce=
+nter;vertical-align:top;width:100%">
+=09<tbody>
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td height=3D"36px" style=3D"-moz-hyphens:auto;-webkit-hyphens:auto;M=
+argin:0;border-collapse:collapse!important;color:#0a0a0a;font-size:40px;fon=
+t-weight:400;hyphens:auto;line-height:36px;margin:0;mso-line-height-rule:ex=
+actly;padding:0;text-align:left;vertical-align:top;word-wrap:break-word">&#=
+xA0;</td>
+=09</tr>
+=09</tbody>
+</table><table align=3D"center" class=3D"wrapper content float-center" styl=
+e=3D"Margin:0 auto;border-collapse:collapse;border-spacing:0;float:none;mar=
+gin:0 auto;padding:0;text-align:center;vertical-align:top;width:100%">
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td class=3D"wrapper-inner" style=3D"-moz-hyphens:auto;-webkit-hyphen=
+s:auto;Margin:0;border-collapse:collapse!important;color:#0a0a0a;font-famil=
+y:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Can=
+tarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:400;hyp=
+hens:auto;line-height:1.3;margin:0;padding:0;text-align:left;vertical-align=
+:top;word-wrap:break-word">
+=09=09=09<table align=3D"center" class=3D"container" style=3D"Margin:0 auto=
+;background:#fff;border-collapse:collapse;border-spacing:0;margin:0 auto;pa=
+dding:0;text-align:inherit;vertical-align:top;width:580px">
+=09=09=09=09<tbody>
+=09=09=09=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09=09=09=09<td style=3D"-moz-hyphens:auto;-webkit-hyphens:auto;Margin:0=
+;border-collapse:collapse!important;color:#0a0a0a;font-family:-apple-system=
+,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helveti=
+ca Neue',Arial,sans-serif;font-size:16px;font-weight:400;hyphens:auto;line-=
+height:1.3;margin:0;padding:0;text-align:left;vertical-align:top;word-wrap:=
+break-word"><table class=3D"row description" style=3D"border-collapse:colla=
+pse;border-spacing:0;display:table;padding:0;position:relative;text-align:l=
+eft;vertical-align:top;width:100%">
+=09<tbody>
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<th class=3D"small-12 large-12 columns first last" style=3D"Margin:0 =
+auto;color:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',=
+Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-=
+size:16px;font-weight:400;line-height:1.3;margin:0 auto;padding:0;padding-b=
+ottom:30px;padding-left:30px;padding-right:30px;text-align:left;width:550px=
+">
+=09=09=09<table style=3D"border-collapse:collapse;border-spacing:0;padding:=
+0;text-align:left;vertical-align:top;width:100%">=09=09=09=09<tr style=3D"p=
+adding:0;text-align:left;vertical-align:top">
+=09=09=09=09=09<td style=3D"Margin:0;color:#0a0a0a;font-family:-apple-syste=
+m,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvet=
+ica Neue',Arial,sans-serif;font-size:16px;font-weight:400;line-height:1.3;m=
+argin:0;padding:0;text-align:left;width:15px;">
+=09=09=09=09=09=09<p class=3D"text-left" style=3D"Margin:0;Margin-bottom:10=
+px;color:#777;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Robot=
+o,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:=
+16px;font-weight:400;line-height:1.3;margin:0;margin-bottom:10px;padding:0;=
+padding-left:10px;text-align:left"><img src=3D"https://collab.example.org/c=
+ore/img/caldav/title.png" alt=3D"&bull;"></p>
+=09=09=09=09=09</td>
+=09=09=09=09=09<td style=3D"Margin:0;color:#0a0a0a;font-family:-apple-syste=
+m,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvet=
+ica Neue',Arial,sans-serif;font-size:16px;font-weight:400;line-height:1.3;m=
+argin:0;padding:0;text-align:left">
+=09=09=09=09=09=09<p class=3D"text-left" style=3D"Margin:0;Margin-bottom:10=
+px;color:#555;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Robot=
+o,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:=
+16px;font-weight:400;line-height:1.3;margin:0;margin-bottom:10px;padding:0;=
+padding-left:10px;text-align:left"><em style=3D"color:#777;">Titel:</em><br=
+><span style=3D'text-decoration: line-through'>test termin</span></p>
+=09=09=09=09=09</td>
+=09=09=09=09=09<td class=3D"expander" style=3D"Margin:0;color:#0a0a0a;font-=
+family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubunt=
+u,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:40=
+0;line-height:1.3;margin:0;padding:0!important;text-align:left;visibility:h=
+idden;width:0"></td>
+=09=09=09=09</tr>=09=09=09=09<tr style=3D"padding:0;text-align:left;vertica=
+l-align:top">
+=09=09=09=09=09<td style=3D"Margin:0;color:#0a0a0a;font-family:-apple-syste=
+m,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvet=
+ica Neue',Arial,sans-serif;font-size:16px;font-weight:400;line-height:1.3;m=
+argin:0;padding:0;text-align:left;width:15px;">
+=09=09=09=09=09=09<p class=3D"text-left" style=3D"Margin:0;Margin-bottom:10=
+px;color:#777;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Robot=
+o,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:=
+16px;font-weight:400;line-height:1.3;margin:0;margin-bottom:10px;padding:0;=
+padding-left:10px;text-align:left"><img src=3D"https://collab.example.org/c=
+ore/img/caldav/time.png" alt=3D"&bull;"></p>
+=09=09=09=09=09</td>
+=09=09=09=09=09<td style=3D"Margin:0;color:#0a0a0a;font-family:-apple-syste=
+m,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvet=
+ica Neue',Arial,sans-serif;font-size:16px;font-weight:400;line-height:1.3;m=
+argin:0;padding:0;text-align:left">
+=09=09=09=09=09=09<p class=3D"text-left" style=3D"Margin:0;Margin-bottom:10=
+px;color:#555;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Robot=
+o,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:=
+16px;font-weight:400;line-height:1.3;margin:0;margin-bottom:10px;padding:0;=
+padding-left:10px;text-align:left"><em style=3D"color:#777;">Wann:</em><br>=
+<span style=3D'text-decoration: line-through'>In 12 Stunden amFreitag, 24. =
+Juli 2026 zwischen 11:00 - 12:00 (Europe/Berlin)</span></p>
+=09=09=09=09=09</td>
+=09=09=09=09=09<td class=3D"expander" style=3D"Margin:0;color:#0a0a0a;font-=
+family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubunt=
+u,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:40=
+0;line-height:1.3;margin:0;padding:0!important;text-align:left;visibility:h=
+idden;width:0"></td>
+=09=09=09=09</tr>=09=09=09</table>
+=09=09</th>
+=09</tr>
+=09</tbody>
+</table>
+=09=09=09=09=09</td>
+=09=09=09=09</tr>
+=09=09=09=09</tbody>
+=09=09=09</table>
+=09=09</td>
+=09</tr>
+</table><table class=3D"spacer float-center" style=3D"Margin:0 auto;border-=
+collapse:collapse;border-spacing:0;float:none;margin:0 auto;padding:0;text-=
+align:center;vertical-align:top;width:100%">
+=09<tbody>
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td height=3D"60px" style=3D"-moz-hyphens:auto;-webkit-hyphens:auto;M=
+argin:0;border-collapse:collapse!important;color:#0a0a0a;font-family:-apple=
+-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'=
+Helvetica Neue',Arial,sans-serif;font-size:60px;font-weight:400;hyphens:aut=
+o;line-height:60px;margin:0;mso-line-height-rule:exactly;padding:0;text-ali=
+gn:left;vertical-align:top;word-wrap:break-word">&#xA0;</td>
+=09</tr>
+=09</tbody>
+</table>
+<table align=3D"center" class=3D"wrapper footer float-center" style=3D"Marg=
+in:0 auto;border-collapse:collapse;border-spacing:0;float:none;margin:0 aut=
+o;padding:0;text-align:center;vertical-align:top;width:100%">
+=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09<td class=3D"wrapper-inner" style=3D"-moz-hyphens:auto;-webkit-hyphen=
+s:auto;Margin:0;border-collapse:collapse!important;color:#0a0a0a;font-famil=
+y:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Can=
+tarell,'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:400;hyp=
+hens:auto;line-height:1.3;margin:0;padding:0;text-align:left;vertical-align=
+:top;word-wrap:break-word">
+=09=09=09<center data-parsed=3D"" style=3D"min-width:580px;width:100%">
+=09=09=09=09<table class=3D"spacer float-center" style=3D"Margin:0 auto;bor=
+der-collapse:collapse;border-spacing:0;float:none;margin:0 auto;padding:0;t=
+ext-align:center;vertical-align:top;width:100%">
+=09=09=09=09=09<tbody>
+=09=09=09=09=09<tr style=3D"padding:0;text-align:left;vertical-align:top">
+=09=09=09=09=09=09<td height=3D"15px" style=3D"-moz-hyphens:auto;-webkit-hy=
+phens:auto;Margin:0;border-collapse:collapse!important;color:#0a0a0a;font-f=
+amily:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu=
+,Cantarell,'Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:400=
+;hyphens:auto;line-height:15px;margin:0;mso-line-height-rule:exactly;paddin=
+g:0;text-align:left;vertical-align:top;word-wrap:break-word">&#xA0;</td>
+=09=09=09=09=09</tr>
+=09=09=09=09=09</tbody>
+=09=09=09=09</table>
+=09=09=09=09<p class=3D"text-center float-center" align=3D"center" style=3D=
+"Margin:0;Margin-bottom:10px;color:#C8C8C8;font-family:-apple-system,BlinkM=
+acSystemFont,'Segoe UI',Roboto,Oxygen-Sans,Ubuntu,Cantarell,'Helvetica Neue=
+',Arial,sans-serif;font-size:12px;font-weight:400;line-height:16px;margin:0=
+;margin-bottom:10px;padding:0;text-align:center">Nextcloud - ein sicherer O=
+rt f=C3=BCr all deine Daten<br>Dies ist eine automatisch gesendete E-Mail. =
+Bitte antworte nicht auf diese E-Mail.</p>
+=09=09=09</center>
+=09=09</td>
+=09</tr>
+</table>=09=09=09=09=09</center>
+=09=09=09=09</td>
+=09=09=09</tr>
+=09=09</table>
+=09=09<!-- prevent Gmail on iOS font size manipulation -->
+=09=09<div style=3D"display:none;white-space:nowrap;font:15px courier;line-=
+height:0">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &n=
+bsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; =
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;</div>
+=09</body>
+</html>
+
+--suX2qA1o--
+
+--DqHUjaCG
+Content-Type: text/calendar; method=CANCEL; charset="utf-8"; name=event.ics
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; name=event.ics; filename=event.ics
+
+QkVHSU46VkNBTEVOREFSDQpWRVJTSU9OOjIuMA0KUFJPRElEOi0vL1NhYnJlLy9TYWJyZSBWT2Jq
+ZWN0IDQuNS42Ly9FTg0KQ0FMU0NBTEU6R1JFR09SSUFODQpNRVRIT0Q6Q0FOQ0VMDQpCRUdJTjpW
+VElNRVpPTkUNClRaSUQ6RXVyb3BlL0Jlcmxpbg0KQkVHSU46REFZTElHSFQNClRaTkFNRTpDRVNU
+DQpUWk9GRlNFVEZST006KzAxMDANClRaT0ZGU0VUVE86KzAyMDANCkRUU1RBUlQ6MTk3MDAzMjlU
+MDIwMDAwDQpSUlVMRTpGUkVRPVlFQVJMWTtCWU1PTlRIPTM7QllEQVk9LTFTVQ0KRU5EOkRBWUxJ
+R0hUDQpCRUdJTjpTVEFOREFSRA0KVFpOQU1FOkNFVA0KVFpPRkZTRVRGUk9NOiswMjAwDQpUWk9G
+RlNFVFRPOiswMTAwDQpEVFNUQVJUOjE5NzAxMDI1VDAzMDAwMA0KUlJVTEU6RlJFUT1ZRUFSTFk7
+QllNT05USD0xMDtCWURBWT0tMVNVDQpFTkQ6U1RBTkRBUkQNCkVORDpWVElNRVpPTkUNCkJFR0lO
+OlZFVkVOVA0KQ1JFQVRFRDoyMDI2MDcyM1QyMDIzNDhaDQpMQVNULU1PRElGSUVEOjIwMjYwNzIz
+VDIwMjYyNFoNClVJRDo1MDU0NTA5Ni03NGRmLTQ5ZTItOTU3My0zZjcwYjQ3OTA0MzcNCkRUU1RB
+UlQ7VFpJRD1FdXJvcGUvQmVybGluOjIwMjYwNzI0VDExMDAwMA0KRFRFTkQ7VFpJRD1FdXJvcGUv
+QmVybGluOjIwMjYwNzI0VDEyMDAwMA0KU1RBVFVTOkNPTkZJUk1FRA0KU1VNTUFSWTp0ZXN0IHRl
+cm1pbg0KT1JHQU5JWkVSO0NOPU1vcml0ejptYWlsdG86bW9yaXR6QGV4YW1wbGUub3JnDQpBVFRF
+TkRFRTtDTj1tb3JpdHpAZXhhbXBsZS5jb206bWFpbHRvOm1vcml0ekBleGFtcGxlLmNvbQ0KRFRT
+VEFNUDoyMDI2MDcyM1QyMDI0NThaDQpTRVFVRU5DRTo0DQpFTkQ6VkVWRU5UDQpFTkQ6VkNBTEVO
+REFSDQo=
+
+--DqHUjaCG--
+
