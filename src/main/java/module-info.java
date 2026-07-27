@@ -9,6 +9,8 @@ open module ms.rohde.businesscalendarrelay {
     requires spring.boot.autoconfigure;
     requires spring.context;
     requires spring.beans;
+    requires spring.context.support;
+    requires jakarta.mail;
     requires ms.rohde.hexagonalarch.annotations;
     requires ms.rohde.hexagonalarch.spring;
 }
