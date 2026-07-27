@@ -4,6 +4,7 @@ import org.jspecify.annotations.NullMarked;
 open module ms.rohde.businesscalendarrelay {
     requires org.jspecify;
     requires jakarta.inject;
+    requires org.apache.logging.log4j;
     requires spring.boot;
     requires spring.boot.autoconfigure;
     requires spring.context;
