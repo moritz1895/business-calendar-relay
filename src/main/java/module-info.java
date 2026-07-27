@@ -15,4 +15,8 @@ open module ms.rohde.businesscalendarrelay {
     requires spring.data.jpa;
     requires ms.rohde.hexagonalarch.annotations;
     requires ms.rohde.hexagonalarch.spring;
+    requires java.net.http;
+    requires java.xml;
+    requires ical4j.core;
+    requires jdk.httpserver;
 }
