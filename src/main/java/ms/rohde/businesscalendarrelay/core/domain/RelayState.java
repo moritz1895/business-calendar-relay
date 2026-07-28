@@ -17,6 +17,13 @@ import ms.rohde.hexagonalarch.annotations.DomainValueObject;
  * cancelled entry is kept, not deleted, so that a source event reappearing later
  * resumes the same {@code blockerUid} and continues the {@code sequence} count rather
  * than starting a duplicate blocker.
+ *
+ * <p>{@code lastKnownAllDay}, {@code lastKnownBusy}, and {@code lastKnownCancelled}
+ * mirror {@link SourceEvent#allDay()}, {@link SourceEvent#busy()}, and
+ * {@link SourceEvent#cancelled()} as of the last successful send, alongside
+ * {@code lastKnownStart}/{@code lastKnownEnd} -- {@link RelayDiffPlanner} compares the
+ * current {@link SourceEvent} against all five of these fields to decide whether an
+ * update is needed.
  */
 @DomainValueObject
 public record RelayState(
@@ -25,7 +32,10 @@ public record RelayState(
         long sequence,
         ZonedDateTime lastKnownStart,
         ZonedDateTime lastKnownEnd,
-        boolean active) {
+        boolean active,
+        boolean lastKnownAllDay,
+        boolean lastKnownBusy,
+        boolean lastKnownCancelled) {
 
     public RelayState {
         Objects.requireNonNull(sourceUid, "sourceUid must not be null");
@@ -48,5 +58,21 @@ public record RelayState(
         if (!lastKnownStart.getZone().equals(lastKnownEnd.getZone())) {
             throw new IllegalArgumentException("lastKnownStart and lastKnownEnd must use the same time zone");
         }
+    }
+
+    /**
+     * Convenience constructor defaulting {@code lastKnownAllDay} to {@code false},
+     * {@code lastKnownBusy} to {@code true}, and {@code lastKnownCancelled} to
+     * {@code false} -- the shape every {@code RelayState} had before event filtering
+     * introduced the other three {@code lastKnown*} fields.
+     */
+    public RelayState(
+            String sourceUid,
+            String blockerUid,
+            long sequence,
+            ZonedDateTime lastKnownStart,
+            ZonedDateTime lastKnownEnd,
+            boolean active) {
+        this(sourceUid, blockerUid, sequence, lastKnownStart, lastKnownEnd, active, false, true, false);
     }
 }

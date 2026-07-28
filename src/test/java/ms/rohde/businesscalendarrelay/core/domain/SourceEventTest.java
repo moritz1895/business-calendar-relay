@@ -49,4 +49,24 @@ class SourceEventTest {
 
         assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
     }
+
+    @Test
+    void create_givenAllFlagsExplicitly_thenSourceEventCarriesThem() {
+        var event = new SourceEvent("source-uid-1", START, END, true, false, true, true);
+
+        assertThat(event.allDay()).isTrue();
+        assertThat(event.busy()).isFalse();
+        assertThat(event.recurring()).isTrue();
+        assertThat(event.cancelled()).isTrue();
+    }
+
+    @Test
+    void create_givenThreeArgConvenienceConstructor_thenDefaultsToNotAllDayBusyNotRecurringNotCancelled() {
+        var event = new SourceEvent("source-uid-1", START, END);
+
+        assertThat(event.allDay()).isFalse();
+        assertThat(event.busy()).isTrue();
+        assertThat(event.recurring()).isFalse();
+        assertThat(event.cancelled()).isFalse();
+    }
 }

@@ -3,6 +3,7 @@ package ms.rohde.businesscalendarrelay.config;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Clock;
+import java.time.Period;
 import java.util.List;
 import ms.rohde.businesscalendarrelay.adapters.outbound.caldav.CalDavCalendarSourceAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaStateStoreAdapter;
@@ -74,8 +75,10 @@ public class RelayWiringConfiguration {
             Clock clock,
             BlockerSink blockerSink,
             RelayStateJpaRepository relayStateJpaRepository) {
+        var recurringEventHorizon = relayProperties.recurringEventHorizon();
         return relayProperties.calendars().stream()
-                .map(calendar -> buildUseCase(calendar, httpClient, clock, blockerSink, relayStateJpaRepository))
+                .map(calendar -> buildUseCase(
+                        calendar, httpClient, clock, blockerSink, relayStateJpaRepository, recurringEventHorizon))
                 .toList();
     }
 
@@ -84,7 +87,8 @@ public class RelayWiringConfiguration {
             HttpClient httpClient,
             Clock clock,
             BlockerSink blockerSink,
-            RelayStateJpaRepository relayStateJpaRepository) {
+            RelayStateJpaRepository relayStateJpaRepository,
+            Period recurringEventHorizon) {
         var calendarSource = new CalDavCalendarSourceAdapter(
                 httpClient, URI.create(calendar.caldavUrl()), calendar.caldavUsername(), calendar.caldavPassword());
         var stateStore = new JpaStateStoreAdapter(relayStateJpaRepository, calendar.id());
@@ -97,6 +101,7 @@ public class RelayWiringConfiguration {
                 calendar.attendeeEmail(),
                 calendar.fromAddress(),
                 calendar.replyToAddress(),
-                clock);
+                clock,
+                recurringEventHorizon);
     }
 }

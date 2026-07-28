@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Period;
 import java.util.List;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.RelayStateJpaRepository;
 import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
@@ -32,11 +33,14 @@ class RelayWiringConfigurationTest {
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Clock clock = Clock.systemUTC();
 
+    private static final Period RECURRING_EVENT_HORIZON = Period.ofMonths(6);
+
     @Test
     void buildUseCases_givenThreeCalendarConfigs_thenReturnsThreeMappedUseCases() {
         var relayProperties = new RelayProperties(
                 Duration.ofMinutes(5),
-                List.of(calendarConfig("calendar-a"), calendarConfig("calendar-b"), calendarConfig("calendar-c")));
+                List.of(calendarConfig("calendar-a"), calendarConfig("calendar-b"), calendarConfig("calendar-c")),
+                RECURRING_EVENT_HORIZON);
 
         var useCases = RelayWiringConfiguration.buildUseCases(
                 relayProperties, httpClient, clock, blockerSink, relayStateJpaRepository);
@@ -48,7 +52,7 @@ class RelayWiringConfigurationTest {
 
     @Test
     void buildUseCases_givenNoCalendarConfigs_thenReturnsEmptyList() {
-        var relayProperties = new RelayProperties(Duration.ofMinutes(5), List.of());
+        var relayProperties = new RelayProperties(Duration.ofMinutes(5), List.of(), RECURRING_EVENT_HORIZON);
 
         var useCases = RelayWiringConfiguration.buildUseCases(
                 relayProperties, httpClient, clock, blockerSink, relayStateJpaRepository);
@@ -58,7 +62,7 @@ class RelayWiringConfigurationTest {
 
     @Test
     void relayProperties_givenNullCalendars_thenDefaultsToEmptyList() {
-        var relayProperties = new RelayProperties(Duration.ofMinutes(5), null);
+        var relayProperties = new RelayProperties(Duration.ofMinutes(5), null, RECURRING_EVENT_HORIZON);
 
         assertThat(relayProperties.calendars()).isEmpty();
     }

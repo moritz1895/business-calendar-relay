@@ -29,9 +29,22 @@ public sealed interface RelayAction {
     /**
      * A source event with no prior {@link RelayState}: a brand-new blocker must be
      * created under a freshly generated {@code blockerUid} at {@code sequence} 0.
+     *
+     * <p>Carries {@code allDay}, {@code busy}, and {@code cancelled} from the triggering
+     * {@link SourceEvent} so the application layer can populate the {@code lastKnown*}
+     * fields of the {@link RelayState} it saves after a successful send, without having
+     * to re-read the source event.
      */
     @DomainValueObject
-    record Create(String sourceUid, String blockerUid, long sequence, ZonedDateTime start, ZonedDateTime end)
+    record Create(
+            String sourceUid,
+            String blockerUid,
+            long sequence,
+            ZonedDateTime start,
+            ZonedDateTime end,
+            boolean allDay,
+            boolean busy,
+            boolean cancelled)
             implements RelayAction {
 
         public Create {
@@ -40,12 +53,24 @@ public sealed interface RelayAction {
     }
 
     /**
-     * A source event whose blocker must be (re-)requested: either its time window
-     * changed while active, or it is resurrecting from a previously cancelled state.
-     * Reuses the prior {@code blockerUid} at {@code prior.sequence() + 1}.
+     * A source event whose blocker must be (re-)requested: either its time window or
+     * one of {@code allDay}/{@code busy}/{@code cancelled} changed while active, or it
+     * is resurrecting from a previously cancelled state. Reuses the prior
+     * {@code blockerUid} at {@code prior.sequence() + 1}.
+     *
+     * <p>Carries {@code allDay}, {@code busy}, and {@code cancelled} from the triggering
+     * {@link SourceEvent} for the same reason as {@link Create}.
      */
     @DomainValueObject
-    record Update(String sourceUid, String blockerUid, long sequence, ZonedDateTime start, ZonedDateTime end)
+    record Update(
+            String sourceUid,
+            String blockerUid,
+            long sequence,
+            ZonedDateTime start,
+            ZonedDateTime end,
+            boolean allDay,
+            boolean busy,
+            boolean cancelled)
             implements RelayAction {
 
         public Update {

@@ -71,4 +71,22 @@ class RelayStateTest {
 
         assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
     }
+
+    @Test
+    void create_givenAllLastKnownFlagsExplicitly_thenRelayStateCarriesThem() {
+        var state = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true, true, false, true);
+
+        assertThat(state.lastKnownAllDay()).isTrue();
+        assertThat(state.lastKnownBusy()).isFalse();
+        assertThat(state.lastKnownCancelled()).isTrue();
+    }
+
+    @Test
+    void create_givenSixArgConvenienceConstructor_thenDefaultsToNotAllDayBusyNotCancelled() {
+        var state = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true);
+
+        assertThat(state.lastKnownAllDay()).isFalse();
+        assertThat(state.lastKnownBusy()).isTrue();
+        assertThat(state.lastKnownCancelled()).isFalse();
+    }
 }
