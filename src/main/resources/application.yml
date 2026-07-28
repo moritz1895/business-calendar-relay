@@ -12,6 +12,15 @@ spring:
           auth: true
           starttls:
             enable: true
+  datasource:
+    url: jdbc:h2:file:${STATE_STORE_DATA_DIR:./data}/relay-state
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
 
 management:
   endpoints:

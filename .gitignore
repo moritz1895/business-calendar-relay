@@ -4,6 +4,9 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+### Local StateStore H2 database (file-mode, default STATE_STORE_DATA_DIR) ###
+/data/
+
 ### IntelliJ IDEA ###
 .idea/
 *.iws

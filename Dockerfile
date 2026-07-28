@@ -8,7 +8,8 @@ RUN mvn package -DskipTests -q
 FROM eclipse-temurin:25-jre-alpine AS runtime
 WORKDIR /app
 
-RUN addgroup -S relay && adduser -S relay -G relay
+RUN addgroup -S relay && adduser -S relay -G relay \
+    && mkdir -p /app/data && chown -R relay:relay /app
 USER relay
 
 COPY --from=builder /app/target/*.jar app.jar

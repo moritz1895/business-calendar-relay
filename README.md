@@ -37,10 +37,20 @@ SMTP-Anbindung folgen als nächste Schritte.
 | `SMTP_PORT` | SMTP-Port | `587` |
 | `SMTP_USERNAME` | SMTP-Benutzername | — (erforderlich) |
 | `SMTP_PASSWORD` | SMTP-Passwort | — (erforderlich) |
+| `STATE_STORE_DATA_DIR` | Verzeichnis für die eingebettete, dateibasierte H2-Datenbank hinter `StateStore` (muss neustartfest sein — in Docker als Volume mounten) | `./data` |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert). Die Liste der überwachten Quellkalender wird über eine eigene
 Config-Datei gepflegt (folgt, sobald der `CalendarSource`-Adapter gebaut ist).
+
+## Persistenz
+
+`StateStore` (das Relay-Mapping Quell-`UID` → Blocker-`UID`/`SEQUENCE`) wird
+über Spring Data JPA in einer eingebetteten H2-Datenbank im Dateimodus
+gehalten (`STATE_STORE_DATA_DIR`), nicht in-memory — der Zustand muss einen
+Prozessneustart überstehen. Pro konfiguriertem Quellkalender existiert
+konzeptionell eine `StateStore`-Instanz; die eigentliche Verdrahtung mehrerer
+Kalender folgt mit dem Scheduler/Multi-Kalender-Konfigurations-PR.
 
 ## Bauen & Testen
 

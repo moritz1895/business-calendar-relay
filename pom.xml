@@ -64,6 +64,24 @@
             </exclusions>
         </dependency>
 
+        <!-- Spring Data JPA (StateStore persistence adapter) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Embedded file-mode H2 database backing the StateStore JPA adapter -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+        </dependency>
+
         <!-- Actuator: /health -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -127,6 +145,19 @@
             <artifactId>hexagonal-arch-archunit</artifactId>
             <version>${hexagonal-arch.version}</version>
             <scope>test</scope>
+        </dependency>
+
+        <!-- @DataJpaTest / TestEntityManager, split out into its own starter as of Spring Boot 4 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa-test</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>

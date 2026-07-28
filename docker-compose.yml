@@ -8,4 +8,10 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
+      STATE_STORE_DATA_DIR: /app/data
+    volumes:
+      - relay-state-data:/app/data
     restart: unless-stopped
+
+volumes:
+  relay-state-data:
