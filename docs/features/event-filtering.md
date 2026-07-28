@@ -354,10 +354,18 @@ wie er intern konfiguriert wird:
   *Neuanlage*, er darf niemals bewirken, dass der Adapter ein Vorkommen gar
   nicht erst zurückliefert.
 
-### `BlockerSink`, `StateStore`
+### `BlockerSink`
 
-Unverändert. Der Filter wirkt ausschließlich zwischen `CalendarSource` und
-`RelayDiffPlanner`; beide anderen Ports sehen von dieser Feature nichts.
+Unverändert. Sieht von dieser Feature nichts.
+
+### `StateStore`
+
+Methodensignaturen (`loadAll()`, `save(RelayState)`, `markCancelled(...)`)
+bleiben unverändert. Die transportierte `RelayState`-Form wächst aber um drei
+Felder (`lastKnownAllDay`, `lastKnownBusy`, `lastKnownCancelled` — siehe
+"Erweiterte Änderungserkennung — Konsequenzen" oben), das betrifft jede
+`StateStore`-Implementierung inkl. der bestehenden `JpaStateStoreAdapter`
+(neue Spalten in `relay_state`, siehe dort).
 
 ### `PollAndRelaySourceCalendarUseCase` (inbound)
 
@@ -412,40 +420,67 @@ konfigurierten Quellkalender** vorgesehen, kein Feld unter
   Filterregeln" oben — unschädlich falls durch die gewählte
   Expansions-Implementierung ohnehin mit abgedeckt, aber nicht gefordert).
 
+## Entscheidungen zu den drei zuvor offenen Fragen (Review durch Projektverantwortlichen)
+
+Die drei vorherigen "Open questions" zu Cancel-on-Status-Change, Horizon-
+Schrumpfung und erweiterter Änderungserkennung wurden mit dem
+Projektverantwortlichen geklärt:
+
+1. **`STATUS:CANCELLED` bei weiterhin sichtbarem Vorkommen storniert
+   *nicht* aktiv einen bestehenden Blocker.** Bestätigt wie in dieser Spec
+   von Anfang an vorgesehen — bleibt reines Erstellungs-Gate, keine
+   Erweiterung des Cancel-Zweigs. Keine Code-Konsequenz gegenüber der
+   obigen Beschreibung.
+2. **Keine zusätzliche, vom Filter unabhängige technische Vorwärts-
+   Deckelung gegen ein nachträglich verkleinertes
+   `relay.recurring-event-horizon`.** Bestätigt als akzeptables, seltenes
+   Reconfiguration-Risiko — bewusst einfach gehalten, keine
+   Code-Konsequenz gegenüber der obigen Beschreibung.
+3. **Änderungserkennung wird erweitert:** Anders als in
+   `relay-orchestration.md`'s ursprünglicher Entscheidung ("Change
+   detection is `start`/`end` only") sollen `allDay`, `busy` und
+   `cancelled` **ebenfalls** einen Update-Zyklus auslösen können, nicht nur
+   `start`/`end`. Diese Entscheidung hat reale Konsequenzen für Domain-
+   und Persistenzschicht, ausgearbeitet im nächsten Abschnitt.
+
+### Erweiterte Änderungserkennung — Konsequenzen
+
+`RelayState` muss dafür zusätzlich zu `lastKnownStart`/`lastKnownEnd` auch
+den zuletzt gesendeten Stand von `allDay`, `busy` und `cancelled`
+mitführen (`lastKnownAllDay`, `lastKnownBusy`, `lastKnownCancelled` —
+booleans, analog benannt zu den bestehenden `lastKnownStart`/`End`-Feldern),
+damit beim nächsten Poll ein Vergleich gegen den aktuellen `SourceEvent`-Stand
+möglich ist. Das ist eine Erweiterung von `RelayState`, nicht nur von
+`SourceEvent` — betrifft also auch den `StateStore`-Port (`save(RelayState)`
+persistiert ab jetzt vier statt zwei Vergleichsfelder) und die JPA-Spalten in
+`docs/technical/database.md` (`relay_state`-Tabelle bekommt drei neue
+Spalten; `ddl-auto: update` fügt sie automatisch hinzu, keine manuelle
+Migration nötig, aber `docs/technical/database.md` muss beim
+Implementieren nachgezogen werden).
+
+`RelayDiffPlanner`s "geändert"-Prädikat aus Schritt 3.2 von
+`relay-orchestration.md` (bisher: `start` oder `end` weicht von
+`lastKnownStart`/`lastKnownEnd` ab) wird erweitert zu: `start`, `end`,
+`allDay`, `busy` **oder** `cancelled` weicht vom jeweiligen `lastKnown*`-Wert
+ab. Jede Abweichung löst wie bisher eine `REQUEST`-Aktualisierung aus
+(gleicher `blockerUid`, `sequence + 1`) — es gibt keinen fachlichen Grund,
+zwischen den vier Feldern zu unterscheiden, da alle vier gemeinsam den für
+Outlook relevanten Zustand des Blockers beschreiben (Zeitfenster plus die
+neu hinzugekommenen Attribute). `recurring` bleibt bewusst **kein**
+Vergleichsfeld — ob ein Vorkommen aus einer Serie stammt, ist reine
+Herkunftsinformation ohne Auswirkung auf den gerenderten Blocker.
+
+Damit ändert sich auch: Ein Termin, der nachträglich z. B. auf
+`TRANSP:TRANSPARENT` umgestellt wird, löst jetzt ein Update aus, obwohl er
+laut Erstellungs-Filter (Bedingung 3) gar nicht mehr neu erstellungsberechtigt
+wäre — das ist kein Widerspruch zur "wichtigste Regel" oben: Der Filter wird
+weiterhin nur für die Neuanlage befragt, das erweiterte
+Änderungs-Prädikat ist ein komplett separater Mechanismus im bereits
+bestehenden Update-Zweig (3.2) und lässt den Cancel-Zweig (Schritt 4)
+unangetastet.
+
 ## Open questions
 
-- **Soll ein bereits aktiver Blocker storniert werden, wenn sein Source
-  Event nachträglich auf `STATUS:CANCELLED` wechselt, dabei aber weiterhin
-  (mit diesem Status) von `CalendarSource.readEvents()` zurückgegeben wird —
-  also *nicht* im Sinne des bestehenden Absenz-Mechanismus "verschwindet"?**
-  Diese Spec entscheidet das bewusst nicht mit: Der bestehende Cancel-Zweig
-  in `RelayDiffPlanner` basiert ausschließlich auf Abwesenheit aus
-  `currentEvents`, nicht auf einem Status-Flag an einem weiterhin
-  vorhandenen Vorkommen. `cancelled` hier zusätzlich als aktives
-  Cancel-Signal zu verwenden wäre eine über die "Erstellungs-Gate-only"-Vorgabe
-  hinausgehende, vom Auftraggeber nicht ausdrücklich freigegebene Erweiterung
-  des Cancel-Zweigs selbst und sollte vor der Umsetzung explizit geklärt
-  werden.
-- **Was passiert, wenn `relay.recurring-event-horizon` nach dem ersten
-  produktiven Lauf verkleinert wird?** Wie oben beschrieben, könnten dadurch
-  bereits aktive Vorkommen weiter in der Zukunft aus der
-  Adapter-Vorwärts-Deckelung herausfallen und fälschlich storniert werden.
-  Diese Spec behandelt das als bekanntes, seltenes Reconfiguration-Risiko
-  statt es architektonisch zu verhindern (z. B. über eine zusätzliche, vom
-  Filter unabhängige, großzügigere technische Deckelung) — ob dieses Risiko
-  akzeptabel ist oder ob eine zweite, bewusst großzügiger bemessene
-  technische Obergrenze eingeführt werden soll, ist vor der Umsetzung zu
-  klären.
-- **Muss `RelayDiffPlanner` künftig auch bei No-op/Update-Vergleichen die
-  neuen Felder (`allDay`, `busy`, `cancelled`) berücksichtigen, oder bleibt
-  Änderungserkennung weiterhin ausschließlich `start`/`end`?** Diese Spec
-  hält an `relay-orchestration.md`'s bestehender Entscheidung fest
-  ("Change detection is `start`/`end` only") und rührt sie nicht an — ein
-  Termin, der z. B. nachträglich auf `TRANSP:TRANSPARENT` umgestellt wird,
-  löst also kein Update aus, solange sein Zeitfenster gleich bleibt. Das
-  folgt konsequent aus der "wichtigste Regel" oben (Filter gilt nicht für
-  bereits vorhandene `RelayState`-Einträge), wird hier aber als offene
-  Frage benannt, falls das fachlich unerwünscht ist.
 - **Zeitzonen-Behandlung ganztägiger Termine.** Diese Spec empfiehlt
   Mitternacht-zu-Mitternacht in der adapterseitig konfigurierten
   Standardzone, da ganztägige Termine ohnehin nie erstellungsberechtigt
