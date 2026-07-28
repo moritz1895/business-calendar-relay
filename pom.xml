@@ -189,6 +189,17 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- module-info.java documents dependencies/nullability only, per its own
+                         Javadoc note: the packaged app always runs on the plain classpath via
+                         "java -jar", never on the module path. Surefire's default of putting a
+                         module-info-bearing project's test classes on the module path would
+                         contradict that: it can pull otherwise-unrelated dependencies (e.g.
+                         hibernate-validator) onto the module path as real named modules, where
+                         JPMS strong encapsulation then rejects reflective access Spring/
+                         Hibernate rely on (e.g. hibernate-validator's
+                         ResourceBundleMessageInterpolator against jakarta.el). Forcing the
+                         classpath keeps test execution consistent with production. -->
+                    <useModulePath>false</useModulePath>
                     <argLine>
                         -XX:+EnableDynamicAgentLoading
                         --add-opens java.base/java.lang=ALL-UNNAMED

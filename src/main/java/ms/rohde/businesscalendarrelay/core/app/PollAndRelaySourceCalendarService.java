@@ -8,6 +8,7 @@ import ms.rohde.businesscalendarrelay.core.domain.ImipCalendarRenderer;
 import ms.rohde.businesscalendarrelay.core.domain.RelayAction;
 import ms.rohde.businesscalendarrelay.core.domain.RelayDiffPlanner;
 import ms.rohde.businesscalendarrelay.core.domain.RelayState;
+import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerMail;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerMailMethod;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
@@ -31,7 +32,7 @@ import org.apache.logging.log4j.Logger;
  * in the returned {@link RelayCycleResult}.
  */
 @ApplicationService
-public final class PollAndRelaySourceCalendarService {
+public final class PollAndRelaySourceCalendarService implements PollAndRelaySourceCalendarUseCase {
 
     private static final Logger LOG = LogManager.getLogger(PollAndRelaySourceCalendarService.class);
 
@@ -71,6 +72,7 @@ public final class PollAndRelaySourceCalendarService {
      * the corresponding iMIP messages, and updates {@link StateStore} for every action
      * whose send succeeded.
      */
+    @Override
     public RelayCycleResult pollAndRelay() {
         var currentEvents = calendarSource.readEvents();
         var priorStates = stateStore.loadAll();

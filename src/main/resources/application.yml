@@ -27,3 +27,21 @@ management:
     web:
       exposure:
         include: health
+
+relay:
+  poll-interval: ${RELAY_POLL_INTERVAL:5m}
+  # `calendars` is deliberately left empty here so the application starts cleanly with
+  # zero source calendars configured (e.g. in CI). Real deployments supply their own
+  # calendar list, one entry per private source calendar, via an external config file
+  # (mounted YAML overriding `relay.calendars`, or `SPRING_CONFIG_ADDITIONAL_LOCATION`).
+  # Shape of one entry (see README.md "Konfiguration" for the full field table):
+  #
+  # calendars:
+  #   - id: personal-nextcloud                 # persistence key -- never rename once events have been relayed under it
+  #     caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
+  #     caldav-username: ${CALDAV_PERSONAL_USERNAME}
+  #     caldav-password: ${CALDAV_PERSONAL_PASSWORD}
+  #     organizer-email: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
+  #     attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
+  #     from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
+  #     reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
