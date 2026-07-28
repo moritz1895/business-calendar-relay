@@ -15,7 +15,7 @@ class RelayStateTest {
 
     @Test
     void create_givenValidData_thenRelayStateIsCreated() {
-        var state = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true);
+        var state = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true, false, true, false);
 
         assertThat(state.sourceUid()).isEqualTo("source-uid-1");
         assertThat(state.blockerUid()).isEqualTo("blocker-uid-1");
@@ -27,25 +27,27 @@ class RelayStateTest {
 
     @Test
     void create_givenBlankSourceUid_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new RelayState("  ", "blocker-uid-1", 0, START, END, true))
+        assertThatThrownBy(() -> new RelayState("  ", "blocker-uid-1", 0, START, END, true, false, true, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenBlankBlockerUid_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new RelayState("source-uid-1", "  ", 0, START, END, true))
+        assertThatThrownBy(() -> new RelayState("source-uid-1", "  ", 0, START, END, true, false, true, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenNegativeSequence_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new RelayState("source-uid-1", "blocker-uid-1", -1, START, END, true))
+        assertThatThrownBy(
+                        () -> new RelayState("source-uid-1", "blocker-uid-1", -1, START, END, true, false, true, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenEndNotAfterStart_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new RelayState("source-uid-1", "blocker-uid-1", 0, START, START, true))
+        assertThatThrownBy(
+                        () -> new RelayState("source-uid-1", "blocker-uid-1", 0, START, START, true, false, true, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -53,21 +55,22 @@ class RelayStateTest {
     void create_givenMismatchedZones_thenThrowsIllegalArgumentException() {
         var endInDifferentZone = END.withZoneSameInstant(ZoneId.of("UTC"));
 
-        assertThatThrownBy(() -> new RelayState("source-uid-1", "blocker-uid-1", 0, START, endInDifferentZone, true))
+        assertThatThrownBy(() -> new RelayState(
+                        "source-uid-1", "blocker-uid-1", 0, START, endInDifferentZone, true, false, true, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenInactiveState_thenRelayStateIsCreated() {
-        var state = new RelayState("source-uid-1", "blocker-uid-1", 3, START, END, false);
+        var state = new RelayState("source-uid-1", "blocker-uid-1", 3, START, END, false, false, true, false);
 
         assertThat(state.active()).isFalse();
     }
 
     @Test
     void equals_givenSameComponents_thenRelayStatesAreEqual() {
-        var first = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true);
-        var second = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true);
+        var first = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true, false, true, false);
+        var second = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true, false, true, false);
 
         assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
     }
@@ -79,14 +82,5 @@ class RelayStateTest {
         assertThat(state.lastKnownAllDay()).isTrue();
         assertThat(state.lastKnownBusy()).isFalse();
         assertThat(state.lastKnownCancelled()).isTrue();
-    }
-
-    @Test
-    void create_givenSixArgConvenienceConstructor_thenDefaultsToNotAllDayBusyNotCancelled() {
-        var state = new RelayState("source-uid-1", "blocker-uid-1", 0, START, END, true);
-
-        assertThat(state.lastKnownAllDay()).isFalse();
-        assertThat(state.lastKnownBusy()).isTrue();
-        assertThat(state.lastKnownCancelled()).isFalse();
     }
 }

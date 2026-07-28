@@ -80,7 +80,8 @@ class PollAndRelaySourceCalendarServiceTest {
 
     @Test
     void pollAndRelay_givenNewSourceEvent_thenCreatesBlockerAndSavesState() {
-        given(calendarSource.readEvents()).willReturn(List.of(new SourceEvent("source-1", START, END)));
+        given(calendarSource.readEvents())
+                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
 
         var result = service.pollAndRelay();
@@ -117,7 +118,8 @@ class PollAndRelaySourceCalendarServiceTest {
     void pollAndRelay_givenNewEventWithStartBeforeClockNow_thenNoActionIsTakenAndNothingIsSaved() {
         var pastStart = ZonedDateTime.of(2026, 7, 15, 10, 0, 0, 0, BERLIN);
         given(calendarSource.readEvents())
-                .willReturn(List.of(new SourceEvent("source-1", pastStart, pastStart.plusHours(1))));
+                .willReturn(List.of(new SourceEvent(
+                        "source-1", pastStart, pastStart.plusHours(1), false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
 
         var result = service.pollAndRelay();
@@ -148,8 +150,10 @@ class PollAndRelaySourceCalendarServiceTest {
     @Test
     void pollAndRelay_givenChangedWindow_thenUpdatesBlockerAndIncrementsSequence() {
         var newEnd = END.plusMinutes(30);
-        given(calendarSource.readEvents()).willReturn(List.of(new SourceEvent("source-1", START, newEnd)));
-        given(stateStore.loadAll()).willReturn(List.of(new RelayState("source-1", "blocker-1", 2, START, END, true)));
+        given(calendarSource.readEvents())
+                .willReturn(List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false)));
+        given(stateStore.loadAll())
+                .willReturn(List.of(new RelayState("source-1", "blocker-1", 2, START, END, true, false, true, false)));
 
         var result = service.pollAndRelay();
 
@@ -177,7 +181,8 @@ class PollAndRelaySourceCalendarServiceTest {
         var flaggedEvent = new SourceEvent("source-1", START, END, true, false, false, true);
         given(calendarSource.readEvents()).willReturn(List.of(flaggedEvent));
         given(stateStore.loadAll())
-                .willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true)));
+                .willReturn(
+                        List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false)));
 
         var result = service.pollAndRelay();
 
@@ -193,8 +198,10 @@ class PollAndRelaySourceCalendarServiceTest {
 
     @Test
     void pollAndRelay_givenUnchangedWindow_thenNoOp() {
-        given(calendarSource.readEvents()).willReturn(List.of(new SourceEvent("source-1", START, END)));
-        given(stateStore.loadAll()).willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true)));
+        given(calendarSource.readEvents())
+                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false)));
+        given(stateStore.loadAll())
+                .willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false)));
 
         var result = service.pollAndRelay();
 
@@ -211,7 +218,8 @@ class PollAndRelaySourceCalendarServiceTest {
     @Test
     void pollAndRelay_givenDisappearedSourceEvent_thenCancelsBlocker() {
         given(calendarSource.readEvents()).willReturn(List.of());
-        given(stateStore.loadAll()).willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true)));
+        given(stateStore.loadAll())
+                .willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false)));
 
         var result = service.pollAndRelay();
 
@@ -236,7 +244,8 @@ class PollAndRelaySourceCalendarServiceTest {
     void pollAndRelay_givenOneSendFailureAmongSeveral_thenContinuesCycleAndReportsFailureWithoutUpdatingState() {
         given(calendarSource.readEvents())
                 .willReturn(List.of(
-                        new SourceEvent("source-fail", START, END), new SourceEvent("source-ok", START, END)));
+                        new SourceEvent("source-fail", START, END, false, true, false, false),
+                        new SourceEvent("source-ok", START, END, false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
 
         var failure = new BlockerSinkException("smtp down");

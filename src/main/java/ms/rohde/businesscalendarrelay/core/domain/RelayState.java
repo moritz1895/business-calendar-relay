@@ -59,20 +59,4 @@ public record RelayState(
             throw new IllegalArgumentException("lastKnownStart and lastKnownEnd must use the same time zone");
         }
     }
-
-    /**
-     * Convenience constructor defaulting {@code lastKnownAllDay} to {@code false},
-     * {@code lastKnownBusy} to {@code true}, and {@code lastKnownCancelled} to
-     * {@code false} -- the shape every {@code RelayState} had before event filtering
-     * introduced the other three {@code lastKnown*} fields.
-     */
-    public RelayState(
-            String sourceUid,
-            String blockerUid,
-            long sequence,
-            ZonedDateTime lastKnownStart,
-            ZonedDateTime lastKnownEnd,
-            boolean active) {
-        this(sourceUid, blockerUid, sequence, lastKnownStart, lastKnownEnd, active, false, true, false);
-    }
 }

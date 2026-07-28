@@ -67,10 +67,10 @@ class JpaStateStoreAdapterTest {
 
     @Test
     void loadAll_givenRowsForAnotherCalendar_thenReturnsOnlyRowsForConstructedCalendarId() {
-        entityManager.persistAndFlush(
-                new RelayStateEntity(CALENDAR_ID, "source-1", "blocker-1", 0, start(), end(), true));
-        entityManager.persistAndFlush(
-                new RelayStateEntity(OTHER_CALENDAR_ID, "source-2", "blocker-2", 0, start(), end(), true));
+        entityManager.persistAndFlush(new RelayStateEntity(
+                CALENDAR_ID, "source-1", "blocker-1", 0, start(), end(), true, false, true, false));
+        entityManager.persistAndFlush(new RelayStateEntity(
+                OTHER_CALENDAR_ID, "source-2", "blocker-2", 0, start(), end(), true, false, true, false));
 
         var result = adapter.loadAll();
 
@@ -79,7 +79,7 @@ class JpaStateStoreAdapterTest {
 
     @Test
     void loadAll_givenSavedState_thenRoundTripsZonedDateTimeIncludingZoneId() {
-        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true));
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false));
 
         var result = adapter.loadAll();
 
@@ -92,19 +92,46 @@ class JpaStateStoreAdapterTest {
     }
 
     @Test
+    void loadAll_givenSavedState_thenRoundTripsAllDayBusyAndCancelledFlags() {
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, true, false, true));
+
+        var result = adapter.loadAll();
+
+        assertThat(result).singleElement().satisfies(state -> {
+            assertThat(state.lastKnownAllDay()).isTrue();
+            assertThat(state.lastKnownBusy()).isFalse();
+            assertThat(state.lastKnownCancelled()).isTrue();
+        });
+    }
+
+    @Test
+    void save_givenExistingSourceUid_thenUpdatesAllDayBusyAndCancelledFlagsInPlace() {
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false));
+
+        adapter.save(new RelayState("source-1", "blocker-1", 1, start(), end(), true, true, false, true));
+
+        var result = adapter.loadAll();
+        assertThat(result).singleElement().satisfies(state -> {
+            assertThat(state.lastKnownAllDay()).isTrue();
+            assertThat(state.lastKnownBusy()).isFalse();
+            assertThat(state.lastKnownCancelled()).isTrue();
+        });
+    }
+
+    @Test
     void save_givenNewSourceUid_thenInsertsNewRow() {
-        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true));
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false));
 
         assertThat(repository.findAllBySourceCalendarId(CALENDAR_ID)).hasSize(1);
     }
 
     @Test
     void save_givenExistingSourceUid_thenUpdatesInPlaceWithoutDuplicateRow() {
-        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true));
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false));
 
         var newStart = start().plusHours(2);
         var newEnd = end().plusHours(2);
-        adapter.save(new RelayState("source-1", "blocker-1", 1, newStart, newEnd, true));
+        adapter.save(new RelayState("source-1", "blocker-1", 1, newStart, newEnd, true, false, true, false));
 
         var rows = repository.findAllBySourceCalendarId(CALENDAR_ID);
         assertThat(rows).hasSize(1);
@@ -115,7 +142,7 @@ class JpaStateStoreAdapterTest {
 
     @Test
     void markCancelled_thenSetsActiveFalseAndUpdatesSequenceLeavingBlockerUidUnchanged() {
-        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true));
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false));
 
         adapter.markCancelled("source-1", 1);
 
@@ -128,7 +155,7 @@ class JpaStateStoreAdapterTest {
 
     @Test
     void loadAll_givenCancelledEntry_thenStillReturnsItInsteadOfDeleting() {
-        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true));
+        adapter.save(new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false));
         adapter.markCancelled("source-1", 1);
 
         var result = adapter.loadAll();

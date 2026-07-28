@@ -51,13 +51,19 @@ public final class JpaStateStoreAdapter implements StateStore {
                         state.sequence(),
                         state.lastKnownStart(),
                         state.lastKnownEnd(),
-                        state.active()));
+                        state.active(),
+                        state.lastKnownAllDay(),
+                        state.lastKnownBusy(),
+                        state.lastKnownCancelled()));
 
         entity.setBlockerUid(state.blockerUid());
         entity.setSequence(state.sequence());
         entity.setLastKnownStart(state.lastKnownStart());
         entity.setLastKnownEnd(state.lastKnownEnd());
         entity.setActive(state.active());
+        entity.setLastKnownAllDay(state.lastKnownAllDay());
+        entity.setLastKnownBusy(state.lastKnownBusy());
+        entity.setLastKnownCancelled(state.lastKnownCancelled());
 
         repository.save(entity);
     }
@@ -82,6 +88,9 @@ public final class JpaStateStoreAdapter implements StateStore {
                 entity.getSequence(),
                 entity.getLastKnownStart(),
                 entity.getLastKnownEnd(),
-                entity.isActive());
+                entity.isActive(),
+                entity.isLastKnownAllDay(),
+                entity.isLastKnownBusy(),
+                entity.isLastKnownCancelled());
     }
 }

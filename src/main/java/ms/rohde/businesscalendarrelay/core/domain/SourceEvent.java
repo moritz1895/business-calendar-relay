@@ -45,15 +45,4 @@ public record SourceEvent(
             throw new IllegalArgumentException("start and end must use the same time zone");
         }
     }
-
-    /**
-     * Convenience constructor defaulting {@code allDay} to {@code false}, {@code busy}
-     * to {@code true} (RFC 5545's {@code TRANSP} default is {@code OPAQUE}),
-     * {@code recurring} to {@code false}, and {@code cancelled} to {@code false} -- a
-     * single, non-recurring, busy, non-cancelled timed event, the shape every
-     * {@code SourceEvent} had before event filtering introduced the other three flags.
-     */
-    public SourceEvent(String sourceUid, ZonedDateTime start, ZonedDateTime end) {
-        this(sourceUid, start, end, false, true, false, false);
-    }
 }
