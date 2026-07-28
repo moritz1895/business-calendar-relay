@@ -25,6 +25,7 @@
         <jspecify.version>1.0.0</jspecify.version>
         <archunit.version>1.4.0</archunit.version>
         <hexagonal-arch.version>1.0.0-SNAPSHOT</hexagonal-arch.version>
+        <ical4j.version>4.1.1</ical4j.version>
     </properties>
 
     <dependencies>
@@ -125,6 +126,13 @@
             <groupId>ms.rohde</groupId>
             <artifactId>hexagonal-arch-spring</artifactId>
             <version>${hexagonal-arch.version}</version>
+        </dependency>
+
+        <!-- ical4j: parses per-resource calendar-data ICS blobs read from CalDAV (CalendarSource adapter) -->
+        <dependency>
+            <groupId>org.mnode.ical4j</groupId>
+            <artifactId>ical4j</artifactId>
+            <version>${ical4j.version}</version>
         </dependency>
 
         <!-- Test Dependencies -->
