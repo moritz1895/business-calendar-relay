@@ -32,16 +32,43 @@ noch ohne jede Relay-Identität.
 
 | Feld | Bedeutung |
 |---|---|
-| `sourceUid` | Die CalDAV-`UID` des Quelltermins. Eigener Namensraum, getrennt von der `UID` des Blockers. |
+| `sourceUid` | Die CalDAV-`UID` des Quelltermins. Eigener Namensraum, getrennt von der `UID` des Blockers. Für ein Vorkommen aus einer wiederkehrenden Serie ein zusammengesetzter Schlüssel — siehe "Zusammengesetzter `sourceUid` für wiederkehrende Termine" unten. |
 | `start`, `end` | Das Zeitfenster des Termins. |
+| `allDay` | `true`, wenn der Termin im Quellkalender ein ganztägiger Termin ist, `false` sonst. Speist ausschließlich den Erstellungs-Filter (siehe unten) sowie die Änderungserkennung — ganztägige Termine sind nie erstellungsberechtigt. |
+| `busy` | `true`, wenn der Termin im Quellkalender Zeit blockiert (nicht als `TRANSP:TRANSPARENT` markiert ist), `false` sonst. |
+| `recurring` | `true`, wenn dieses Vorkommen aus einer wiederkehrenden Serie stammt, unabhängig davon, ob es individuell überschrieben wurde. Rein informationell: fließt in den Erstellungs-Filter (Wiederholungs-Zeitfenster) ein, wird aber nie für Änderungserkennung verglichen. |
+| `cancelled` | `true`, wenn der zugrunde liegende Termin (bzw. bei einer Serie: deren Master) als storniert markiert ist. |
 
-`SourceEvent` trägt bewusst keine weiteren Informationen — keinen Titel,
-keine Beschreibung, keinen Organisator, keine Teilnehmer. Da Blocker
-titellos sind und Filterlogik (welche Quelltermine überhaupt gespiegelt
-werden) bewusst noch nicht existiert, werden aktuell auch keine weiteren
-Fakten über einen Quelltermin benötigt. Das ist zugleich eine
-Datenschutzeigenschaft: Der Quellkalender-Port muss nie mehr über einen
-Termin preisgeben, als für die Blocker-Erzeugung nötig ist.
+`SourceEvent` trägt bewusst weiterhin keine inhaltlichen Informationen —
+keinen Titel, keine Beschreibung, keinen Organisator, keine Teilnehmer. Die
+vier booleschen Felder oben tragen ausschließlich Fakten, die der
+Erstellungs-Filter und die Änderungserkennung brauchen (siehe
+"Domänenregeln" unten), keine inhaltliche Erweiterung. Das bleibt zugleich
+eine Datenschutzeigenschaft: Der Quellkalender-Port muss nie mehr über
+einen Termin preisgeben, als für die Blocker-Erzeugung und die
+Filterentscheidung nötig ist.
+
+#### Zusammengesetzter `sourceUid` für wiederkehrende Termine
+
+Eine CalDAV-`UID` identifiziert die gesamte Serie, nicht das einzelne
+Vorkommen — mehrere Vorkommen derselben Serie teilen sich dieselbe `UID`.
+Da `RelayDiffPlanner` und `StateStore` pro `sourceUid` genau einen
+Lebenszyklus (Erstellung → Aktualisierung → Absage) führen, braucht jedes
+Vorkommen eine eigene, stabile Identität. Für ein Vorkommen aus einer
+wiederkehrenden Serie setzt sich `sourceUid` deshalb zusammen aus der
+Serien-`UID`, einem `#`-Trennzeichen und dem ursprünglichen, von der Serie
+berechneten Start dieses Vorkommens (nicht der ggf. durch eine individuelle
+Verschiebung abweichenden tatsächlichen Startzeit). Für einen echten
+Einzeltermin bleibt `sourceUid` unverändert die reine `VEVENT`-`UID`.
+
+Der entscheidende Grund für "ursprünglicher, serienberechneter Zeitpunkt"
+statt "tatsächlicher Zeitpunkt": Wird ein einzelnes Vorkommen später auf
+eine andere Uhrzeit verschoben, bleibt seine Identität stabil — die
+Verschiebung wird dadurch korrekt als Aktualisierung desselben `sourceUid`
+erkannt (gleiche `blockerUid`, `sequence + 1`), statt als Absage eines
+scheinbar verschwundenen Vorkommens plus Neuanlage eines vermeintlich neuen.
+Das ist konsistent mit dem Prinzip "ein `blockerUid` pro Quelltermin über
+dessen gesamte Lebenszeit".
 
 ### `BlockerEvent`
 
@@ -66,8 +93,9 @@ Poll-Zyklen hinweg aufrechterhält.
 | `sourceUid` | Der Quelltermin, auf den sich dieser Zustand bezieht (Schlüssel). |
 | `blockerUid` | Die stabile Blocker-`UID` über die gesamte Lebensdauer des Quelltermins (Erstellung → Aktualisierungen → Absage). |
 | `sequence` | Die zuletzt tatsächlich versendete `SEQUENCE` für `blockerUid` — die einzige Quelle der Wahrheit, aus der die nächste `SEQUENCE` abgeleitet wird. |
-| `lastKnownStart`, `lastKnownEnd` | Das Zeitfenster des Quelltermins zum Zeitpunkt des letzten erfolgreichen Versands — die Vergleichsbasis für Änderungserkennung im nächsten Poll-Zyklus. |
+| `lastKnownStart`, `lastKnownEnd` | Das Zeitfenster des Quelltermins zum Zeitpunkt des letzten erfolgreichen Versands — Teil der Vergleichsbasis für Änderungserkennung im nächsten Poll-Zyklus. |
 | `active` | `true`, solange der Quelltermin noch vorhanden und nicht abgesagt ist; `false`, sobald eine Absage (`CANCEL`) versendet wurde. |
+| `lastKnownAllDay`, `lastKnownBusy`, `lastKnownCancelled` | Der `allDay`-, `busy`- bzw. `cancelled`-Stand des Quelltermins zum Zeitpunkt des letzten erfolgreichen Versands — zusammen mit `lastKnownStart`/`lastKnownEnd` die vollständige Vergleichsbasis für Änderungserkennung (siehe Domänenregeln unten). |
 
 Ein `RelayState`-Eintrag mit `active = false` wird **nicht gelöscht**,
 sondern bewusst aufbewahrt (siehe Domänenregeln unten).
@@ -77,22 +105,30 @@ sondern bewusst aufbewahrt (siehe Domänenregeln unten).
 Eine einzelne Erstellungs-, Aktualisierungs- oder Absage-Entscheidung für
 genau einen Quelltermin, wie sie `RelayDiffPlanner` für einen Poll-Zyklus
 trifft. `RelayAction` ist eine versiegelte Schnittstelle mit drei
-Ausprägungen, die alle dieselben Felder tragen (`sourceUid`, `blockerUid`,
-`sequence`, `start`, `end`):
+Ausprägungen, die alle die Felder `sourceUid`, `blockerUid`, `sequence`,
+`start`, `end` tragen; `Create` und `Update` tragen zusätzlich `allDay`,
+`busy` und `cancelled` vom auslösenden `SourceEvent`, damit die
+Anwendungsschicht nach erfolgreichem Versand die `lastKnown*`-Felder des zu
+speichernden `RelayState` befüllen kann, ohne den Quelltermin erneut zu
+lesen:
 
-- **`Create`** — für einen Quelltermin ohne vorherigen `RelayState`: ein
+- **`Create`** — für einen Quelltermin ohne vorherigen `RelayState`, der
+  zusätzlich den Erstellungs-Filter besteht (siehe Domänenregeln unten): ein
   neuer Blocker muss unter einer frisch generierten `blockerUid` bei
   `sequence = 0` erstellt werden.
 - **`Update`** — für einen Quelltermin, dessen Blocker (erneut) angefordert
-  werden muss: entweder weil sich sein Zeitfenster geändert hat, während er
-  aktiv war, oder weil er aus einem zuvor abgesagten Zustand
-  "wiederaufersteht". Verwendet die vorhandene `blockerUid` bei
-  `prior.sequence() + 1`.
+  werden muss: entweder weil sich sein Zeitfenster oder eines von `allDay`/
+  `busy`/`cancelled` geändert hat, während er aktiv war, oder weil er aus
+  einem zuvor abgesagten Zustand "wiederaufersteht". Verwendet die
+  vorhandene `blockerUid` bei `prior.sequence() + 1`.
 - **`Cancel`** — für einen zuvor aktiven Quelltermin, der im aktuellen Poll
   nicht mehr vorhanden ist: der Blocker muss abgesagt werden, unter
   Wiederverwendung der vorhandenen `blockerUid` bei `prior.sequence() + 1`
   und dem zuletzt bekannten Zeitfenster (da kein aktuelles Fenster mehr
-  existiert).
+  existiert). Trägt bewusst kein `allDay`/`busy`/`cancelled` — eine Absage
+  braucht keinen `lastKnown*`-Stand mehr, da der `RelayState`-Eintrag danach
+  nur noch auf `active = false` gesetzt, aber nicht mit neuen Werten
+  überschrieben wird.
 
 `RelayAction` trägt bewusst keine Angabe zur iMIP-Methode (`REQUEST`/
 `CANCEL`) oder zu einem port-spezifischen Typ — das ist eine reine
@@ -105,10 +141,13 @@ Persistierung obliegt der Anwendungsschicht.
 
 Zustandsloser Dienst, der für einen Poll-Zyklus entscheidet, welche
 Quelltermine einen neuen, aktualisierten oder abgesagten Blocker benötigen,
-und welche `SEQUENCE` diese Aktion erhält. Reine Funktion ihrer zwei
-Eingaben (`currentEvents`, `priorStates`) — führt selbst keine
-Ein-/Ausgabe durch und kennt keinen Port. Die vollständigen
-Entscheidungsregeln stehen unten unter "Domänenregeln".
+und welche `SEQUENCE` diese Aktion erhält. Reine Funktion ihrer vier
+Eingaben (`currentEvents`, `priorStates`, `now`, `recurringEventHorizon`) —
+führt selbst keine Ein-/Ausgabe durch und kennt keinen Port. `now` und
+`recurringEventHorizon` werden pro Aufruf frisch übergeben, nicht als
+Zustand gehalten, da der Erstellungs-Filter, den sie speisen, bei jedem
+Poll-Zyklus gegen den aktuellen Zeitpunkt neu ausgewertet werden muss. Die
+vollständigen Entscheidungsregeln stehen unten unter "Domänenregeln".
 
 ### `ImipCalendarRenderer`
 
@@ -148,14 +187,19 @@ ein ungültiger Zustand kann nicht einmal vorübergehend entstehen:
 Diese Regeln sind in `RelayDiffPlanner.plan(...)` implementiert und bilden
 den fachlichen Kern des gesamten Service:
 
-1. **Neuer Quelltermin → Erstellung.** Ein Quelltermin ohne vorherigen
-   `RelayState` erhält eine neu generierte `blockerUid` und startet bei
-   `sequence = 0`.
-2. **Aktiver Quelltermin mit geändertem Zeitfenster → Aktualisierung.**
-   Erkannt wird eine Änderung ausschließlich am Vergleich `start`/`end`
-   gegen `lastKnownStart`/`lastKnownEnd` — kein anderes Feld wird
-   verglichen, da `SourceEvent` keine weiteren Felder trägt.
-3. **Aktiver Quelltermin mit unverändertem Zeitfenster → keine Aktion.**
+1. **Neuer, erstellungsberechtigter Quelltermin → Erstellung.** Ein
+   Quelltermin ohne vorherigen `RelayState` erhält eine neu generierte
+   `blockerUid` und startet bei `sequence = 0` — aber nur, wenn er zusätzlich
+   den Erstellungs-Filter besteht (siehe eigener Abschnitt unten). Besteht er
+   ihn nicht, wird für diesen Zyklus gar keine Aktion erzeugt; der Quelltermin
+   wird beim nächsten Poll erneut unvoreingenommen gegen den Filter geprüft.
+2. **Aktiver Quelltermin mit geändertem Zeitfenster oder geänderten Flags →
+   Aktualisierung.** Erkannt wird eine Änderung am Vergleich `start`, `end`,
+   `allDay`, `busy` und `cancelled` gegen die jeweiligen `lastKnown*`-Felder
+   — weicht mindestens eines der fünf ab, wird aktualisiert. `recurring`
+   fließt nicht in diesen Vergleich ein (siehe unten).
+3. **Aktiver Quelltermin ohne Abweichung in einem der fünf Felder → keine
+   Aktion.**
    Ein erneutes Versenden einer identischen Anfrage würde Outlooks Zustand
    nicht ändern und nur unnötigen Mailverkehr sowie `SEQUENCE`-Verbrauch
    erzeugen.
@@ -221,15 +265,71 @@ fachliche Anlass. Diese Regel ist untrennbar mit `SourceEvent`s bewusst
 minimalem Umfang verbunden: Da `SourceEvent` ohnehin keinen Titel trägt,
 kann ein Blocker gar nicht anders als titellos gerendert werden.
 
-### Änderungserkennung erfolgt ausschließlich über Start/Ende
+### Erstellungs-Filter — Gate ausschließlich für die Neuanlage
+
+Ein Quelltermin ohne vorherigen `RelayState` wird nur dann tatsächlich als
+neuer Blocker angelegt, wenn er **alle** folgenden Bedingungen erfüllt
+(`RelayDiffPlanner.isEligibleForCreation`, ausgewertet frisch pro
+Poll-Zyklus gegen das aktuelle `now`):
+
+1. **Vergangenheits-Cutoff:** `start` liegt nicht in der Vergangenheit.
+   Maßgeblich ist ausdrücklich `start`, nicht `end` — ein bereits laufender,
+   aber noch nicht beendeter Termin gilt ebenfalls als nicht mehr
+   erstellungsberechtigt. Das ist eine bewusste, keine ungenaue Konsequenz
+   dieser Regel.
+2. **Kein ganztägiger Termin:** `allDay` ist `false`.
+3. **Als "beschäftigt" markiert:** `busy` ist `true`.
+4. **Nicht storniert markiert:** `cancelled` ist `false`.
+5. **Wiederholungs-Zeitfenster, nur für wiederkehrende Termine:** Ist
+   `recurring` `true`, darf `start` nicht später liegen als
+   `now.plus(recurringEventHorizon)` (konfigurierbar, siehe README).
+   Einzeltermine haben keine solche obere Zeitschranke — für sie gilt nur
+   der Vergangenheits-Cutoff aus Bedingung 1.
+
+**Die wichtigste Invariante dieser Feature: Der Erstellungs-Filter wirkt
+ausschließlich als Gate für die Neuanlage und wird für keinen Quelltermin
+befragt, zu dem bereits ein `RelayState`-Eintrag existiert — weder für
+einen aktiven noch für einen bereits abgesagten.** Ein Quelltermin mit
+vorhandenem `RelayState` durchläuft unverändert die Aktualisierungs-/
+Keine-Aktion-/Absage-/Wiederauferstehungs-Regeln oben, unabhängig davon, ob
+er aktuell den Filter bestehen würde. Storniert wird ein Blocker weiterhin
+ausschließlich dann, wenn sein Quelltermin tatsächlich aus
+`CalendarSource.readEvents()` verschwindet — niemals, weil er inzwischen in
+der Vergangenheit liegt, auf ganztägig/nicht-beschäftigt/storniert
+umgestellt wurde oder aus dem Wiederholungs-Zeitfenster herausgefallen ist.
+Ein Fehler an dieser Stelle würde dazu führen, dass real aktive, gerade
+laufende Blocker im Geschäftskalender unbemerkt verschwinden — siehe
+`docs/features/event-filtering.md` für die vollständige Herleitung dieser
+Regel.
+
+Ein nicht erstellungsberechtigter Quelltermin ohne `RelayState` wird für den
+aktuellen Zyklus schlicht übersprungen — kein Rendern, kein Versand, kein
+`RelayState`-Eintrag. Er wird beim nächsten Poll erneut unvoreingenommen
+gegen den Filter geprüft; ändert sich sein Filter-Ergebnis (Start rückt ins
+Zeitfenster, `TRANSP` wird umgestellt, …), wird er automatisch
+berücksichtigt, ohne dass es dafür eine eigene "Zeitfenster ist
+vorgerückt"-Logik braucht — der Filter wird ohnehin bei jedem Zyklus frisch
+gegen das aktuelle `now` ausgewertet.
+
+### Erweiterte Änderungserkennung über Start/Ende hinaus
 
 Ein Quelltermin gilt als "geändert" gegenüber seinem letzten bekannten
-Zustand ausschließlich dann, wenn `start` oder `end` vom gespeicherten
-`lastKnownStart`/`lastKnownEnd` abweicht. Da `SourceEvent` kein weiteres
-Feld trägt und Blocker titellos sind, gibt es fachlich nichts anderes, das
-sich ändern könnte. Diese Regel muss überprüft werden, sobald die
-(aktuell bewusst zurückgestellte) Filterlogik `SourceEvent` künftig um
-weitere vergleichbare Felder erweitert.
+Zustand, wenn `start`, `end`, `allDay`, `busy` **oder** `cancelled` vom
+jeweiligen `lastKnown*`-Feld abweicht — nicht mehr nur `start`/`end`. Es
+gibt fachlich keinen Grund, zwischen diesen fünf Feldern zu unterscheiden,
+da sie gemeinsam den für Outlook relevanten Zustand des Blockers
+beschreiben (Zeitfenster plus die Attribute, die eine erneute Anfrage
+rechtfertigen). `recurring` bleibt bewusst **kein** Vergleichsfeld — ob ein
+Vorkommen aus einer Serie stammt, ist reine Herkunftsinformation ohne
+Auswirkung auf den gerenderten Blocker.
+
+Eine wichtige Konsequenz: Ein Termin, der nachträglich z. B. auf
+"nicht beschäftigt" umgestellt wird, löst dadurch ein Update aus, obwohl er
+laut Erstellungs-Filter gar nicht mehr erstellungsberechtigt wäre. Das ist
+kein Widerspruch zur obigen Gate-Invariante — der Filter wird weiterhin
+ausschließlich für die Neuanlage befragt, die erweiterte Änderungserkennung
+ist ein komplett separater Mechanismus im bereits bestehenden
+Aktualisierungs-Zweig und lässt den Absage-Zweig unangetastet.
 
 ## Domänenausnahmen
 

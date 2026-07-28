@@ -27,6 +27,15 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
   Anzahl sich automatisch nach der konfigurierten Kalenderliste richtet.
 - Fehlertoleranter Poll-Zyklus: ein fehlgeschlagener Versand für einen
   einzelnen Termin blockiert nicht die übrigen Termine desselben Zyklus.
+- Erstellungs-Filterung neuer Blocker (Vergangenheits-Cutoff, Ausschluss
+  ganztägiger/nicht-beschäftigter/stornierter Quelltermine, konfigurierbares
+  Wiederholungs-Zeitfenster für wiederkehrende Termine), damit ein erster
+  Lauf gegen einen Kalender mit mehrjähriger Historie nicht Hunderte
+  historischer Termine als iMIP-Flut verschickt. Wirkt ausschließlich auf
+  die Neuanlage, nie auf bereits vorhandene Blocker.
+- Auflösung von wiederkehrenden Terminen (`RRULE`) inklusive `EXDATE`- und
+  `RECURRENCE-ID`-Overrides zu einzelnen, stabil identifizierten
+  Vorkommen.
 
 ## Tech-Stack
 
@@ -63,8 +72,18 @@ Poll-Zyklus pro konfiguriertem Quellkalender im festen Intervall
 `relay.calendars`-Konfiguration (siehe unten). Die Struktur der erzeugten
 iMIP-Nachrichten ist über Tests festgenagelt (siehe
 [`docs/reference/`](docs/reference/) für die zugrunde liegenden, mit Outlook
-verifizierten Referenz-Mails). Filterlogik (welche Quelltermine überhaupt gespiegelt
-werden) ist bewusst noch nicht gebaut.
+verifizierten Referenz-Mails).
+
+Event-Filterung für das initiale Handling großer Kalenderhistorien (Issue
+#3) ist umgesetzt: Ein Quelltermin ohne vorherigen Relay-Zustand wird nur
+dann als neuer Blocker angelegt, wenn sein Start in der Zukunft liegt, er
+kein ganztägiger und kein als "nicht beschäftigt" markierter Termin ist,
+er nicht storniert markiert ist und — bei wiederkehrenden Terminen —
+innerhalb eines konfigurierbaren, nach vorne gleitenden Zeitfensters
+(`relay.recurring-event-horizon`) liegt. Bereits vorhandene Blocker werden
+von diesem Filter nie betroffen, siehe
+[`docs/features/event-filtering.md`](docs/features/event-filtering.md) und
+[`docs/domain.md`](docs/domain.md) für die vollständige Regel.
 
 ## Verhalten (verifiziert gegen Outlook)
 
@@ -86,6 +105,7 @@ werden) ist bewusst noch nicht gebaut.
 | `SMTP_PASSWORD` | SMTP-Passwort | — (erforderlich) |
 | `STATE_STORE_DATA_DIR` | Verzeichnis für die eingebettete, dateibasierte H2-Datenbank hinter `StateStore` (muss neustartfest sein — in Docker als Volume mounten) | `./data` |
 | `RELAY_POLL_INTERVAL` | Intervall, in dem **jeder** konfigurierte Quellkalender abgefragt wird (Spring-`Duration`-Syntax, z. B. `5m`, `300s`) | `5m` |
+| `RELAY_RECURRING_EVENT_HORIZON` | Wie weit ein Vorkommen eines wiederkehrenden Quelltermins in der Zukunft liegen darf, um noch erstmals als Blocker angelegt zu werden — gilt **einheitlich** für jeden konfigurierten Quellkalender (ISO-8601-`Period`-Syntax, z. B. `P6M`, `P90D`). Einzeltermine sind davon nicht betroffen, siehe [`docs/domain.md`](docs/domain.md). | `P6M` |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert).
@@ -102,6 +122,7 @@ Kalender (z. B. in CI).
 ```yaml
 relay:
   poll-interval: 5m
+  recurring-event-horizon: P6M
   calendars:
     - id: personal-nextcloud
       caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
@@ -161,11 +182,12 @@ Dokumentation liegt unter `docs/`:
 
 | Dokument | Inhalt |
 |---|---|
-| [`docs/domain.md`](docs/domain.md) | Fachliches Domänenmodell: Wertobjekte (`SourceEvent`, `BlockerEvent`, `RelayState`, `RelayAction`), Domänendienste und -regeln (z. B. `SEQUENCE`-Invariante, Aufbewahrung abgesagter Zustände, Titellos-Prinzip). |
+| [`docs/domain.md`](docs/domain.md) | Fachliches Domänenmodell: Wertobjekte (`SourceEvent`, `BlockerEvent`, `RelayState`, `RelayAction`), Domänendienste und -regeln (z. B. `SEQUENCE`-Invariante, Aufbewahrung abgesagter Zustände, Titellos-Prinzip, Erstellungs-Filter für Bestandsdaten). |
 | [`docs/use-cases.md`](docs/use-cases.md) | Use-Case-Katalog: "Poll and Relay Source Calendar" mit Akteur, Ablauf, Fehlerfällen und Ergebnis, beschrieben anhand des tatsächlichen Code-Verhaltens. |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records für nicht offensichtliche Entscheidungen (eingebettetes H2 pro Kalender, zufällige `blockerUid`-Generierung, Aufbewahrung abgesagter Relay-Zustände, programmatisches Scheduling, Fehlerisolation im Poll-Zyklus, Bean-Definition-Pruning für pro-Kalender-Komponenten). |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records für nicht offensichtliche Entscheidungen (eingebettetes H2 pro Kalender, zufällige `blockerUid`-Generierung, Aufbewahrung abgesagter Relay-Zustände, programmatisches Scheduling, Fehlerisolation im Poll-Zyklus, Bean-Definition-Pruning für pro-Kalender-Komponenten, Erstellungs-Filter als reines Neuanlage-Gate). |
 | [`docs/technical/`](docs/technical/) | Technische Implementierungsdetails der Adapter: Datenbank, CalDAV, SMTP, Scheduling, Infrastruktur. |
 | [`docs/features/relay-orchestration.md`](docs/features/relay-orchestration.md) | Ursprüngliche Vorab-Spezifikation (Forward-Mode) der Poll-and-Relay-Orchestrierung. `docs/use-cases.md` beschreibt das tatsächliche Verhalten und markiert Abweichungen davon explizit. |
+| [`docs/features/event-filtering.md`](docs/features/event-filtering.md) | Vorab-Spezifikation (Forward-Mode) der Event-Filterung für das initiale Handling großer Kalenderhistorien (Issue #3) — Erstellungs-Filter, zusammengesetzter `sourceUid` für wiederkehrende Termine, erweiterte Änderungserkennung. Vollständig umgesetzt; `docs/domain.md` und `docs/use-cases.md` fassen das Ergebnis zusammen. |
 | [`docs/reference/`](docs/reference/) | Anonymisierte, mit Outlook verifizierte iMIP-Referenz-Mails (`.eml`), die die strukturellen Anforderungen an die generierten Nachrichten belegen. |
 
 ### Architekturüberblick
