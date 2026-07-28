@@ -61,7 +61,17 @@ Einzige Tabelle, abgebildet über `RelayStateEntity`
 | `sequence_number` | `long` | nein | Letzter gesendeter `SEQUENCE`-Wert für `blocker_uid`; einzige Quelle der Wahrheit für den nächsten `SEQUENCE`-Wert |
 | `last_known_start` | `String` (konvertiert aus `ZonedDateTime`) | nein | Letzter bekannter `DTSTART` des Quell-Events, ISO-8601 mit vollständiger Zeitzone |
 | `last_known_end` | `String` (konvertiert aus `ZonedDateTime`) | nein | Letzter bekannter `DTEND` des Quell-Events, analog |
+| `last_known_all_day` | `boolean` | nein | Letzter bekannter Ganztägig-Status des Quell-Events (seit Event-Filtering-Feature, Issue #3) |
+| `last_known_busy` | `boolean` | nein | Letzter bekannter Beschäftigt-Status (`TRANSP` ≠ `TRANSPARENT`) des Quell-Events (seit Issue #3) |
+| `last_known_cancelled` | `boolean` | nein | Letzter bekannter `STATUS:CANCELLED`-Status des Quell-Events (seit Issue #3) |
 | `active` | `boolean` | nein | `true` solange das Quell-Event existiert und nicht storniert ist; `false` nach gesendetem `CANCEL` |
+
+Die drei `last_known_*`-Boolean-Spalten wurden mit dem Event-Filtering-Feature
+(Issue #3, `docs/features/event-filtering.md`) ergänzt: `RelayDiffPlanner`s
+Änderungserkennung löst seitdem nicht mehr nur bei geändertem `start`/`end`
+ein Update aus, sondern auch bei geändertem Ganztägig-/Beschäftigt-/
+Storniert-Status. `ddl-auto: update` hat die Spalten automatisch ergänzt,
+keine manuelle Migration nötig.
 
 Primärschlüssel: zusammengesetzt aus `(source_calendar_id, source_uid)`, über
 `@IdClass(RelayStateEntityId.class)` abgebildet

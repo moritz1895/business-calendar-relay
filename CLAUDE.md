@@ -75,8 +75,13 @@ Structural findings driving the generator:
   a sensible reply target.
 
 None of the reference mails contain `VALARM` or `RECURRENCE-ID` — the captured
-scenarios are single-occurrence events. Recurring source events are out of
-scope until explicitly revisited.
+scenarios are single-occurrence events. `VALARM` remains out of scope.
+Recurring source events were revisited and are now handled (Issue #3, see
+`docs/features/event-filtering.md`): `RRULE` is expanded, `EXDATE` and
+`RECURRENCE-ID` overrides are resolved at the `CalDavCalendarSourceAdapter`
+boundary, and each occurrence gets a composite `sourceUid`
+(`<seriesUid>#<original occurrence instant>`) so a moved occurrence tracks as
+an update rather than a duplicate.
 
 ## Module descriptor
 
@@ -105,11 +110,15 @@ nullability intent — real module boundaries matter for libraries (like
 
 - **Delta detection**: full poll-and-diff first; CalDAV `sync-collection`
   (RFC 6578) sync-token support comes later once the basic relay works
-  end-to-end.
-- **Filtering logic** (which source events become blockers, title/content
-  scrubbing rules): built last, after the structural iMIP generation is
-  proven against the fixtures above. Don't pre-build hooks or config surface
-  for filtering before that phase starts.
+  end-to-end. Still deferred — current next feature on the roadmap.
+- ~~**Filtering logic**~~ Done (Issue #3, `docs/features/event-filtering.md`):
+  a creation-eligibility gate (past-cutoff, all-day exclusion, transparent/
+  free exclusion, `STATUS:CANCELLED` exclusion, a configurable forward
+  sliding window for recurring events via `relay.recurring-event-horizon`)
+  decides which source events become blockers, applied only to first-time
+  creation — it never retroactively cancels an already-active blocker.
+  Title/content scrubbing remains out of scope: `SourceEvent` still carries
+  no `SUMMARY`/`DESCRIPTION`, by design (see `docs/domain.md`).
 
 ## Test fixtures
 
