@@ -90,7 +90,12 @@ public class RelayWiringConfiguration {
             RelayStateJpaRepository relayStateJpaRepository,
             Period recurringEventHorizon) {
         var calendarSource = new CalDavCalendarSourceAdapter(
-                httpClient, URI.create(calendar.caldavUrl()), calendar.caldavUsername(), calendar.caldavPassword());
+                httpClient,
+                URI.create(calendar.caldavUrl()),
+                calendar.caldavUsername(),
+                calendar.caldavPassword(),
+                clock,
+                recurringEventHorizon);
         var stateStore = new JpaStateStoreAdapter(relayStateJpaRepository, calendar.id());
 
         return new PollAndRelaySourceCalendarService(

@@ -49,6 +49,15 @@ class RelayStateEntity {
     @Column(name = "active", nullable = false)
     private boolean active;
 
+    @Column(name = "last_known_all_day", nullable = false)
+    private boolean lastKnownAllDay;
+
+    @Column(name = "last_known_busy", nullable = false)
+    private boolean lastKnownBusy;
+
+    @Column(name = "last_known_cancelled", nullable = false)
+    private boolean lastKnownCancelled;
+
     protected RelayStateEntity() {}
 
     RelayStateEntity(
@@ -58,7 +67,10 @@ class RelayStateEntity {
             long sequence,
             ZonedDateTime lastKnownStart,
             ZonedDateTime lastKnownEnd,
-            boolean active) {
+            boolean active,
+            boolean lastKnownAllDay,
+            boolean lastKnownBusy,
+            boolean lastKnownCancelled) {
         this.sourceCalendarId = sourceCalendarId;
         this.sourceUid = sourceUid;
         this.blockerUid = blockerUid;
@@ -66,6 +78,9 @@ class RelayStateEntity {
         this.lastKnownStart = lastKnownStart;
         this.lastKnownEnd = lastKnownEnd;
         this.active = active;
+        this.lastKnownAllDay = lastKnownAllDay;
+        this.lastKnownBusy = lastKnownBusy;
+        this.lastKnownCancelled = lastKnownCancelled;
     }
 
     String getSourceCalendarId() {
@@ -114,5 +129,29 @@ class RelayStateEntity {
 
     void setActive(boolean active) {
         this.active = active;
+    }
+
+    boolean isLastKnownAllDay() {
+        return lastKnownAllDay;
+    }
+
+    void setLastKnownAllDay(boolean lastKnownAllDay) {
+        this.lastKnownAllDay = lastKnownAllDay;
+    }
+
+    boolean isLastKnownBusy() {
+        return lastKnownBusy;
+    }
+
+    void setLastKnownBusy(boolean lastKnownBusy) {
+        this.lastKnownBusy = lastKnownBusy;
+    }
+
+    boolean isLastKnownCancelled() {
+        return lastKnownCancelled;
+    }
+
+    void setLastKnownCancelled(boolean lastKnownCancelled) {
+        this.lastKnownCancelled = lastKnownCancelled;
     }
 }
