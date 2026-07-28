@@ -1,0 +1,77 @@
+package ms.rohde.businesscalendarrelay.config;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.net.http.HttpClient;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.RelayStateJpaRepository;
+import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
+import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+/**
+ * {@link RelayWiringConfiguration#buildUseCases} is deliberately a plain static method
+ * so this config-to-use-case mapping can be verified without booting a Spring context --
+ * the actual Spring wiring (bean resolution, eager-singleton avoidance) is covered
+ * separately by {@code BusinessCalendarRelayApplicationContextStartupTest}.
+ */
+@ExtendWith(MockitoExtension.class)
+class RelayWiringConfigurationTest {
+
+    @Mock
+    private BlockerSink blockerSink;
+
+    @Mock
+    private RelayStateJpaRepository relayStateJpaRepository;
+
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final Clock clock = Clock.systemUTC();
+
+    @Test
+    void buildUseCases_givenThreeCalendarConfigs_thenReturnsThreeMappedUseCases() {
+        var relayProperties = new RelayProperties(
+                Duration.ofMinutes(5),
+                List.of(calendarConfig("calendar-a"), calendarConfig("calendar-b"), calendarConfig("calendar-c")));
+
+        var useCases = RelayWiringConfiguration.buildUseCases(
+                relayProperties, httpClient, clock, blockerSink, relayStateJpaRepository);
+
+        assertThat(useCases).hasSize(3);
+        assertThat(useCases).allSatisfy(
+                useCase -> assertThat(useCase).isInstanceOf(PollAndRelaySourceCalendarUseCase.class));
+    }
+
+    @Test
+    void buildUseCases_givenNoCalendarConfigs_thenReturnsEmptyList() {
+        var relayProperties = new RelayProperties(Duration.ofMinutes(5), List.of());
+
+        var useCases = RelayWiringConfiguration.buildUseCases(
+                relayProperties, httpClient, clock, blockerSink, relayStateJpaRepository);
+
+        assertThat(useCases).isEmpty();
+    }
+
+    @Test
+    void relayProperties_givenNullCalendars_thenDefaultsToEmptyList() {
+        var relayProperties = new RelayProperties(Duration.ofMinutes(5), null);
+
+        assertThat(relayProperties.calendars()).isEmpty();
+    }
+
+    private static RelayProperties.CalendarConfig calendarConfig(String id) {
+        return new RelayProperties.CalendarConfig(
+                id,
+                "https://caldav.example.com/" + id + "/",
+                "user-" + id,
+                "password-" + id,
+                "organizer-" + id + "@example.com",
+                "business@example.com",
+                "relay@example.com",
+                "organizer-" + id + "@example.com");
+    }
+}
