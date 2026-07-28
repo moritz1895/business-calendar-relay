@@ -11,6 +11,48 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 [`CLAUDE.md`](CLAUDE.md) beschrieben (Hexagonal Architecture, Ports:
 `CalendarSource`, `BlockerSink`, `StateStore`).
 
+## Features
+
+- Beliebig viele private CalDAV-Quellkalender in einer einzigen
+  Konfiguration (`relay.calendars`), je mit eigener Relay-Historie.
+- Titellose Blocker im dienstlichen Kalender — nur Frei/Belegt wird
+  gespiegelt, nie der fachliche Anlass des Quelltermins.
+- Erstellung, Verschiebung und Absage werden als iMIP `METHOD:REQUEST`/
+  `METHOD:CANCEL` unter stabiler `UID` und strikt steigender `SEQUENCE`
+  versendet, sodass Outlook sie als denselben, sich entwickelnden Termin
+  erkennt statt als neue Einladungen.
+- Persistenter Relay-Zustand pro Quellkalender, der Prozessneustarts
+  übersteht.
+- Programmatisch geplante Poll-Zyklen (kein festes `@Scheduled`-Set), deren
+  Anzahl sich automatisch nach der konfigurierten Kalenderliste richtet.
+- Fehlertoleranter Poll-Zyklus: ein fehlgeschlagener Versand für einen
+  einzelnen Termin blockiert nicht die übrigen Termine desselben Zyklus.
+
+## Tech-Stack
+
+| Bereich | Technologie |
+|---|---|
+| Sprache/Laufzeit | Java 25 |
+| Anwendungs-Framework | Spring Boot 4.0.x (Scheduling, `@ConfigurationProperties`, Actuator) |
+| Architektur | Hexagonal Architecture (`ms.rohde:hexagonal-arch-*`) |
+| Quellkalender-Zugriff | CalDAV via `java.net.http.HttpClient` (RFC 4791 `calendar-query` REPORT), ICS-Parsing mit `ical4j` |
+| iMIP/E-Mail-Versand | SMTP via Spring `JavaMailSender` (Jakarta Mail) |
+| Persistenz | Spring Data JPA gegen eingebettetes H2 im Dateimodus |
+| Logging | Log4j2 |
+| Tests | JUnit 5, Mockito, AssertJ, ArchUnit (`hexagonal-arch-archunit`) |
+| Build | Maven |
+| Betrieb | Docker / Docker Compose |
+
+## Voraussetzungen
+
+- Java 25 (JDK)
+- Maven (oder der mitgelieferte Wrapper, falls vorhanden)
+- Zugriff auf ein Maven-Repository mit `ms.rohde:hexagonal-arch-*` in
+  Version `1.0.0-SNAPSHOT` (lokal oder privates Repository)
+- Ein erreichbarer SMTP-Server für den ausgehenden iMIP-Versand
+- Mindestens ein per CalDAV erreichbarer, privater Quellkalender
+- Docker und Docker Compose, falls containerisiert betrieben werden soll
+
 ## Status
 
 Alle drei Outbound-Adapter (`CalDavCalendarSourceAdapter`, `SmtpBlockerSinkAdapter`,
@@ -111,6 +153,48 @@ Use-Case-Instanzen erst zur Laufzeit aus `relay.calendars` feststeht. Das
 Ergebnis jedes Zyklus wird geloggt: INFO bei einem sauberen Durchlauf, WARN
 mit den betroffenen `sourceUid`s, sobald mindestens ein Versand fehlgeschlagen
 ist.
+
+## Dokumentation
+
+Dieses README deckt Überblick, Konfiguration und Betrieb ab. Tiefergehende
+Dokumentation liegt unter `docs/`:
+
+| Dokument | Inhalt |
+|---|---|
+| [`docs/domain.md`](docs/domain.md) | Fachliches Domänenmodell: Wertobjekte (`SourceEvent`, `BlockerEvent`, `RelayState`, `RelayAction`), Domänendienste und -regeln (z. B. `SEQUENCE`-Invariante, Aufbewahrung abgesagter Zustände, Titellos-Prinzip). |
+| [`docs/use-cases.md`](docs/use-cases.md) | Use-Case-Katalog: "Poll and Relay Source Calendar" mit Akteur, Ablauf, Fehlerfällen und Ergebnis, beschrieben anhand des tatsächlichen Code-Verhaltens. |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records für nicht offensichtliche Entscheidungen (eingebettetes H2 pro Kalender, zufällige `blockerUid`-Generierung, Aufbewahrung abgesagter Relay-Zustände, programmatisches Scheduling, Fehlerisolation im Poll-Zyklus, Bean-Definition-Pruning für pro-Kalender-Komponenten). |
+| [`docs/technical/`](docs/technical/) | Technische Implementierungsdetails der Adapter: Datenbank, CalDAV, SMTP, Scheduling, Infrastruktur. |
+| [`docs/features/relay-orchestration.md`](docs/features/relay-orchestration.md) | Ursprüngliche Vorab-Spezifikation (Forward-Mode) der Poll-and-Relay-Orchestrierung. `docs/use-cases.md` beschreibt das tatsächliche Verhalten und markiert Abweichungen davon explizit. |
+| [`docs/reference/`](docs/reference/) | Anonymisierte, mit Outlook verifizierte iMIP-Referenz-Mails (`.eml`), die die strukturellen Anforderungen an die generierten Nachrichten belegen. |
+
+### Architekturüberblick
+
+Der Service folgt Hexagonal Architecture (siehe [`CLAUDE.md`](CLAUDE.md)):
+Die Anwendungsschicht (`core/app`) orchestriert pro konfiguriertem
+Quellkalender einen Poll-Zyklus über drei ausgehende Ports —
+`CalendarSource` (CalDAV-Lesezugriff), `StateStore` (Relay-Bookkeeping) und
+`BlockerSink` (iMIP-Versand per SMTP) — während der reine Domänenkern
+(`core/domain`) die Diff-Entscheidung (`RelayDiffPlanner`) und das
+iMIP/ICS-Rendering (`ImipCalendarRenderer`) unabhängig von jedem Framework
+kapselt. Ein programmatischer Scheduler (`adapters/inbound/scheduling`)
+treibt jede Use-Case-Instanz an. Details zum fachlichen Modell stehen in
+`docs/domain.md`, zu den Use Cases in `docs/use-cases.md`, zu den
+Implementierungsentscheidungen in `docs/adr/` und `docs/technical/`.
+
+## Lokal starten
+
+1. Java 25 und Maven installieren (siehe Voraussetzungen).
+2. `.env.example` nach `.env` kopieren und mit echten SMTP- sowie
+   CalDAV-Zugangsdaten befüllen (siehe [Konfiguration](#konfiguration)).
+3. `mvn clean install` ausführen, um Build und Tests einmal vollständig
+   laufen zu lassen.
+4. `mvn spring-boot:run` starten (die `relay.calendars`-Liste kann für
+   einen ersten Testlauf auch leer bleiben — die Anwendung startet dann
+   ohne konfigurierte Quellkalender).
+5. Log-Ausgabe beobachten: `PollAndRelaySchedulerAdapter` protokolliert
+   nach jedem Poll-Zyklus (`relay.poll-interval`) das Ergebnis pro
+   konfiguriertem Quellkalender.
 
 ## Bauen & Testen
 
