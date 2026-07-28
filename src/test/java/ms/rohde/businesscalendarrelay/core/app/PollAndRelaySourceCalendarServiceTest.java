@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -45,7 +46,8 @@ class PollAndRelaySourceCalendarServiceTest {
     private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
     private static final ZonedDateTime START = ZonedDateTime.of(2026, 7, 23, 10, 0, 0, 0, BERLIN);
     private static final ZonedDateTime END = START.plusHours(1);
-    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-07-27T09:00:00Z"), ZoneOffset.UTC);
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-07-20T09:00:00Z"), ZoneOffset.UTC);
+    private static final Period RECURRING_EVENT_HORIZON = Period.ofMonths(6);
     private static final String ORGANIZER = "organizer@example.com";
     private static final String ATTENDEE = "business@example.com";
     private static final String FROM = "relay@example.com";
@@ -65,7 +67,15 @@ class PollAndRelaySourceCalendarServiceTest {
     @BeforeEach
     void setUp() {
         service = new PollAndRelaySourceCalendarService(
-                calendarSource, blockerSink, stateStore, ORGANIZER, ATTENDEE, FROM, REPLY_TO, CLOCK);
+                calendarSource,
+                blockerSink,
+                stateStore,
+                ORGANIZER,
+                ATTENDEE,
+                FROM,
+                REPLY_TO,
+                CLOCK,
+                RECURRING_EVENT_HORIZON);
     }
 
     @Test
@@ -97,7 +107,42 @@ class PollAndRelaySourceCalendarServiceTest {
         assertThat(saved.active()).isTrue();
         assertThat(saved.lastKnownStart()).isEqualTo(START);
         assertThat(saved.lastKnownEnd()).isEqualTo(END);
+        assertThat(saved.lastKnownAllDay()).isFalse();
+        assertThat(saved.lastKnownBusy()).isTrue();
+        assertThat(saved.lastKnownCancelled()).isFalse();
         assertThat(mail.icsText()).contains("UID:" + saved.blockerUid());
+    }
+
+    @Test
+    void pollAndRelay_givenNewEventWithStartBeforeClockNow_thenNoActionIsTakenAndNothingIsSaved() {
+        var pastStart = ZonedDateTime.of(2026, 7, 15, 10, 0, 0, 0, BERLIN);
+        given(calendarSource.readEvents())
+                .willReturn(List.of(new SourceEvent("source-1", pastStart, pastStart.plusHours(1))));
+        given(stateStore.loadAll()).willReturn(List.of());
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).isEmpty();
+        assertThat(result.updated()).isEmpty();
+        assertThat(result.cancelled()).isEmpty();
+        assertThat(result.failed()).isEmpty();
+        then(blockerSink).shouldHaveNoInteractions();
+        then(stateStore).should(never()).save(any());
+    }
+
+    @Test
+    void pollAndRelay_givenNewRecurringEventBeyondConfiguredHorizon_thenNoActionIsTakenAndNothingIsSaved() {
+        var beyondHorizonStart = ZonedDateTime.of(2027, 6, 1, 10, 0, 0, 0, BERLIN);
+        var recurringEvent =
+                new SourceEvent("source-1", beyondHorizonStart, beyondHorizonStart.plusHours(1), false, true, true, false);
+        given(calendarSource.readEvents()).willReturn(List.of(recurringEvent));
+        given(stateStore.loadAll()).willReturn(List.of());
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).isEmpty();
+        then(blockerSink).shouldHaveNoInteractions();
+        then(stateStore).should(never()).save(any());
     }
 
     @Test
@@ -125,6 +170,25 @@ class PollAndRelaySourceCalendarServiceTest {
         assertThat(saved.sequence()).isEqualTo(3);
         assertThat(saved.lastKnownEnd()).isEqualTo(newEnd);
         assertThat(saved.active()).isTrue();
+    }
+
+    @Test
+    void pollAndRelay_givenFlagOnlyChangeOnActiveState_thenSavesRelayStateWithCurrentAllDayBusyCancelledFlags() {
+        var flaggedEvent = new SourceEvent("source-1", START, END, true, false, false, true);
+        given(calendarSource.readEvents()).willReturn(List.of(flaggedEvent));
+        given(stateStore.loadAll())
+                .willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true)));
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.updated()).containsExactly("source-1");
+
+        var stateCaptor = ArgumentCaptor.forClass(RelayState.class);
+        then(stateStore).should().save(stateCaptor.capture());
+        var saved = stateCaptor.getValue();
+        assertThat(saved.lastKnownAllDay()).isTrue();
+        assertThat(saved.lastKnownBusy()).isFalse();
+        assertThat(saved.lastKnownCancelled()).isTrue();
     }
 
     @Test

@@ -1,6 +1,8 @@
 package ms.rohde.businesscalendarrelay.core.app;
 
 import java.time.Clock;
+import java.time.Period;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import ms.rohde.businesscalendarrelay.core.domain.BlockerEvent;
@@ -44,6 +46,7 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
     private final String fromAddress;
     private final String replyToAddress;
     private final Clock clock;
+    private final Period recurringEventHorizon;
     private final RelayDiffPlanner planner = new RelayDiffPlanner();
     private final ImipCalendarRenderer renderer = new ImipCalendarRenderer();
 
@@ -55,7 +58,8 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
             String attendeeEmail,
             String fromAddress,
             String replyToAddress,
-            Clock clock) {
+            Clock clock,
+            Period recurringEventHorizon) {
         this.calendarSource = calendarSource;
         this.blockerSink = blockerSink;
         this.stateStore = stateStore;
@@ -64,6 +68,7 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
         this.fromAddress = fromAddress;
         this.replyToAddress = replyToAddress;
         this.clock = clock;
+        this.recurringEventHorizon = recurringEventHorizon;
     }
 
     /**
@@ -76,7 +81,8 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
     public RelayCycleResult pollAndRelay() {
         var currentEvents = calendarSource.readEvents();
         var priorStates = stateStore.loadAll();
-        var actions = planner.plan(currentEvents, priorStates);
+        var now = ZonedDateTime.now(clock);
+        var actions = planner.plan(currentEvents, priorStates, now, recurringEventHorizon);
 
         var created = new ArrayList<String>();
         var updated = new ArrayList<String>();
@@ -105,7 +111,15 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
         }
 
         stateStore.save(new RelayState(
-                action.sourceUid(), action.blockerUid(), action.sequence(), action.start(), action.end(), true));
+                action.sourceUid(),
+                action.blockerUid(),
+                action.sequence(),
+                action.start(),
+                action.end(),
+                true,
+                action.allDay(),
+                action.busy(),
+                action.cancelled()));
         created.add(action.sourceUid());
     }
 
@@ -120,7 +134,15 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
         }
 
         stateStore.save(new RelayState(
-                action.sourceUid(), action.blockerUid(), action.sequence(), action.start(), action.end(), true));
+                action.sourceUid(),
+                action.blockerUid(),
+                action.sequence(),
+                action.start(),
+                action.end(),
+                true,
+                action.allDay(),
+                action.busy(),
+                action.cancelled()));
         updated.add(action.sourceUid());
     }
 
