@@ -26,6 +26,7 @@ import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSinkException;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
 import ms.rohde.businesscalendarrelay.ports.outbound.StateStore;
+import ms.rohde.businesscalendarrelay.ports.outbound.StateStoreException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -278,7 +279,7 @@ class PollAndRelaySourceCalendarServiceTest {
                         new SourceEvent("source-ok", START, END, false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
 
-        var failure = new RuntimeException("db unavailable");
+        var failure = new StateStoreException("db unavailable");
         var callCount = new AtomicInteger();
         willAnswer(invocation -> {
                     if (callCount.incrementAndGet() == 1) {

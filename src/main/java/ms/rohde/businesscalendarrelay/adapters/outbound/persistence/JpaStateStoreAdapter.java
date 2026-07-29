@@ -1,8 +1,10 @@
 package ms.rohde.businesscalendarrelay.adapters.outbound.persistence;
 
 import java.util.List;
+import java.util.Optional;
 import ms.rohde.businesscalendarrelay.core.domain.RelayState;
 import ms.rohde.businesscalendarrelay.ports.outbound.StateStore;
+import ms.rohde.businesscalendarrelay.ports.outbound.StateStoreException;
 import ms.rohde.hexagonalarch.annotations.InfrastructureServiceAdapter;
 
 /**
@@ -42,8 +44,7 @@ public final class JpaStateStoreAdapter implements StateStore {
 
     @Override
     public void save(RelayState state) {
-        var entity = repository
-                .findBySourceCalendarIdAndSourceUid(sourceCalendarId, state.sourceUid())
+        var entity = findEntity(state.sourceUid())
                 .orElseGet(() -> new RelayStateEntity(
                         sourceCalendarId,
                         state.sourceUid(),
@@ -65,20 +66,41 @@ public final class JpaStateStoreAdapter implements StateStore {
         entity.setLastKnownBusy(state.lastKnownBusy());
         entity.setLastKnownCancelled(state.lastKnownCancelled());
 
-        repository.save(entity);
+        saveEntity(entity, state.sourceUid());
     }
 
     @Override
     public void markCancelled(String sourceUid, long sequence) {
-        var entity = repository
-                .findBySourceCalendarIdAndSourceUid(sourceCalendarId, sourceUid)
+        var entity = findEntity(sourceUid)
                 .orElseThrow(() -> new IllegalStateException("No RelayState found for sourceCalendarId="
                         + sourceCalendarId + ", sourceUid=" + sourceUid));
 
         entity.setSequence(sequence);
         entity.setActive(false);
 
-        repository.save(entity);
+        saveEntity(entity, sourceUid);
+    }
+
+    private Optional<RelayStateEntity> findEntity(String sourceUid) {
+        try {
+            return repository.findBySourceCalendarIdAndSourceUid(sourceCalendarId, sourceUid);
+        } catch (RuntimeException e) {
+            throw new StateStoreException(
+                    "Failed to load relay state for sourceCalendarId=" + sourceCalendarId + ", sourceUid="
+                            + sourceUid,
+                    e);
+        }
+    }
+
+    private void saveEntity(RelayStateEntity entity, String sourceUid) {
+        try {
+            repository.save(entity);
+        } catch (RuntimeException e) {
+            throw new StateStoreException(
+                    "Failed to persist relay state for sourceCalendarId=" + sourceCalendarId + ", sourceUid="
+                            + sourceUid,
+                    e);
+        }
     }
 
     private RelayState toDomain(RelayStateEntity entity) {

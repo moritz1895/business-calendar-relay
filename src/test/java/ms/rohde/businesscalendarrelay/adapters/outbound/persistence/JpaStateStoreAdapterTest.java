@@ -2,10 +2,16 @@ package ms.rohde.businesscalendarrelay.adapters.outbound.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.mock;
 
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Optional;
 import ms.rohde.businesscalendarrelay.core.domain.RelayState;
+import ms.rohde.businesscalendarrelay.ports.outbound.StateStoreException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -170,5 +176,61 @@ class JpaStateStoreAdapterTest {
     void markCancelled_givenUnknownSourceUid_thenThrowsIllegalStateException() {
         assertThatThrownBy(() -> adapter.markCancelled("unknown-source", 1))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void save_givenRepositoryFindThrows_thenThrowsStateStoreExceptionWrappingCause() {
+        var mockRepository = mock(RelayStateJpaRepository.class);
+        var mockAdapter = new JpaStateStoreAdapter(mockRepository, CALENDAR_ID);
+        var cause = new RuntimeException("db unavailable");
+        willThrow(cause).given(mockRepository).findBySourceCalendarIdAndSourceUid(CALENDAR_ID, "source-1");
+
+        assertThatThrownBy(() -> mockAdapter.save(
+                        new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false)))
+                .isInstanceOf(StateStoreException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void save_givenRepositorySaveThrows_thenThrowsStateStoreExceptionWrappingCause() {
+        var mockRepository = mock(RelayStateJpaRepository.class);
+        var mockAdapter = new JpaStateStoreAdapter(mockRepository, CALENDAR_ID);
+        var cause = new RuntimeException("db unavailable");
+        given(mockRepository.findBySourceCalendarIdAndSourceUid(CALENDAR_ID, "source-1"))
+                .willReturn(Optional.empty());
+        willThrow(cause).given(mockRepository).save(any());
+
+        assertThatThrownBy(() -> mockAdapter.save(
+                        new RelayState("source-1", "blocker-1", 0, start(), end(), true, false, true, false)))
+                .isInstanceOf(StateStoreException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void markCancelled_givenRepositoryFindThrows_thenThrowsStateStoreExceptionWrappingCause() {
+        var mockRepository = mock(RelayStateJpaRepository.class);
+        var mockAdapter = new JpaStateStoreAdapter(mockRepository, CALENDAR_ID);
+        var cause = new RuntimeException("db unavailable");
+        willThrow(cause).given(mockRepository).findBySourceCalendarIdAndSourceUid(CALENDAR_ID, "source-1");
+
+        assertThatThrownBy(() -> mockAdapter.markCancelled("source-1", 1))
+                .isInstanceOf(StateStoreException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void markCancelled_givenRepositorySaveThrows_thenThrowsStateStoreExceptionWrappingCause() {
+        var mockRepository = mock(RelayStateJpaRepository.class);
+        var mockAdapter = new JpaStateStoreAdapter(mockRepository, CALENDAR_ID);
+        var existing = new RelayStateEntity(
+                CALENDAR_ID, "source-1", "blocker-1", 0, start(), end(), true, false, true, false);
+        var cause = new RuntimeException("db unavailable");
+        given(mockRepository.findBySourceCalendarIdAndSourceUid(CALENDAR_ID, "source-1"))
+                .willReturn(Optional.of(existing));
+        willThrow(cause).given(mockRepository).save(any());
+
+        assertThatThrownBy(() -> mockAdapter.markCancelled("source-1", 1))
+                .isInstanceOf(StateStoreException.class)
+                .hasCause(cause);
     }
 }

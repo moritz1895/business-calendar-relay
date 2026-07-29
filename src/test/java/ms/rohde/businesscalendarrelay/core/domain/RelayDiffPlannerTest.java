@@ -20,7 +20,7 @@ class RelayDiffPlannerTest {
     private final RelayDiffPlanner planner = new RelayDiffPlanner();
 
     @Test
-    void plan_givenNewSourceEvent_thenReturnsCreateActionWithFreshBlockerUidAndSequenceZero() {
+    void plan_givenNewSourceEvent_thenReturnsCreateActionWithDeterministicBlockerUidAndSequenceZero() {
         var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);

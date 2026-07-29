@@ -17,6 +17,7 @@ import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSinkException;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
 import ms.rohde.businesscalendarrelay.ports.outbound.StateStore;
+import ms.rohde.businesscalendarrelay.ports.outbound.StateStoreException;
 import ms.rohde.hexagonalarch.annotations.ApplicationService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -184,7 +185,7 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
         try {
             stateStore.save(state);
             return true;
-        } catch (RuntimeException e) {
+        } catch (StateStoreException e) {
             LOG.warn("Failed to save relay state for sourceUid={}", sourceUid, e);
             failed.add(new RelayFailure(sourceUid, e));
             return false;
@@ -195,7 +196,7 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
         try {
             stateStore.markCancelled(sourceUid, sequence);
             return true;
-        } catch (RuntimeException e) {
+        } catch (StateStoreException e) {
             LOG.warn("Failed to mark relay state cancelled for sourceUid={}", sourceUid, e);
             failed.add(new RelayFailure(sourceUid, e));
             return false;
