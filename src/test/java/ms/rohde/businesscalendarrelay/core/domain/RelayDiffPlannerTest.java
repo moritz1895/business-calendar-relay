@@ -20,7 +20,7 @@ class RelayDiffPlannerTest {
     private final RelayDiffPlanner planner = new RelayDiffPlanner();
 
     @Test
-    void plan_givenNewSourceEvent_thenReturnsCreateActionWithFreshBlockerUidAndSequenceZero() {
+    void plan_givenNewSourceEvent_thenReturnsCreateActionWithDeterministicBlockerUidAndSequenceZero() {
         var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
@@ -58,6 +58,19 @@ class RelayDiffPlannerTest {
 
         assertThat(actions).hasSize(2);
         assertThat(actions.get(0).blockerUid()).isNotEqualTo(actions.get(1).blockerUid());
+    }
+
+    @Test
+    void plan_givenSameNewSourceEventPlannedTwice_thenGeneratesSameBlockerUidBothTimes() {
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+
+        var firstAttempt = planner.plan(currentEvents, List.of(), NOW, HORIZON);
+        var retryAfterUnpersistedState = planner.plan(currentEvents, List.of(), NOW, HORIZON);
+
+        assertThat(firstAttempt).hasSize(1);
+        assertThat(retryAfterUnpersistedState).hasSize(1);
+        assertThat(retryAfterUnpersistedState.getFirst().blockerUid())
+                .isEqualTo(firstAttempt.getFirst().blockerUid());
     }
 
     @Test

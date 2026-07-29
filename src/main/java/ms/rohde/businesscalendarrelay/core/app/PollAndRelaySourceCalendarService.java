@@ -17,6 +17,7 @@ import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSinkException;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
 import ms.rohde.businesscalendarrelay.ports.outbound.StateStore;
+import ms.rohde.businesscalendarrelay.ports.outbound.StateStoreException;
 import ms.rohde.hexagonalarch.annotations.ApplicationService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -29,9 +30,10 @@ import org.apache.logging.log4j.Logger;
  *
  * <p>Delegates the create/update/cancel decision and {@code SEQUENCE} bookkeeping to
  * {@link RelayDiffPlanner}; this service only orchestrates the resulting plan against
- * the outbound ports. A failed {@link BlockerSink#send(BlockerMail)} call is isolated to
- * its one source event; the rest of the poll cycle continues and the failure is reported
- * in the returned {@link RelayCycleResult}.
+ * the outbound ports. A failed {@link BlockerSink#send(BlockerMail)} call, or a failed
+ * {@link StateStore#save(RelayState)}/{@link StateStore#markCancelled(String, long)} call,
+ * is isolated to its one source event; the rest of the poll cycle continues and the
+ * failure is reported in the returned {@link RelayCycleResult}.
  */
 @ApplicationService
 public final class PollAndRelaySourceCalendarService implements PollAndRelaySourceCalendarUseCase {
@@ -110,7 +112,7 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
             return;
         }
 
-        stateStore.save(new RelayState(
+        var state = new RelayState(
                 action.sourceUid(),
                 action.blockerUid(),
                 action.sequence(),
@@ -119,7 +121,10 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
                 true,
                 action.allDay(),
                 action.busy(),
-                action.cancelled()));
+                action.cancelled());
+        if (!trySaveState(state, action.sourceUid(), failed)) {
+            return;
+        }
         created.add(action.sourceUid());
     }
 
@@ -133,7 +138,7 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
             return;
         }
 
-        stateStore.save(new RelayState(
+        var state = new RelayState(
                 action.sourceUid(),
                 action.blockerUid(),
                 action.sequence(),
@@ -142,7 +147,10 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
                 true,
                 action.allDay(),
                 action.busy(),
-                action.cancelled()));
+                action.cancelled());
+        if (!trySaveState(state, action.sourceUid(), failed)) {
+            return;
+        }
         updated.add(action.sourceUid());
     }
 
@@ -156,7 +164,9 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
             return;
         }
 
-        stateStore.markCancelled(action.sourceUid(), action.sequence());
+        if (!tryMarkCancelled(action.sourceUid(), action.sequence(), failed)) {
+            return;
+        }
         cancelled.add(action.sourceUid());
     }
 
@@ -166,6 +176,28 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
             return true;
         } catch (BlockerSinkException e) {
             LOG.warn("Failed to send {} blocker for sourceUid={}", actionKind, sourceUid, e);
+            failed.add(new RelayFailure(sourceUid, e));
+            return false;
+        }
+    }
+
+    private boolean trySaveState(RelayState state, String sourceUid, List<RelayFailure> failed) {
+        try {
+            stateStore.save(state);
+            return true;
+        } catch (StateStoreException e) {
+            LOG.warn("Failed to save relay state for sourceUid={}", sourceUid, e);
+            failed.add(new RelayFailure(sourceUid, e));
+            return false;
+        }
+    }
+
+    private boolean tryMarkCancelled(String sourceUid, long sequence, List<RelayFailure> failed) {
+        try {
+            stateStore.markCancelled(sourceUid, sequence);
+            return true;
+        } catch (StateStoreException e) {
+            LOG.warn("Failed to mark relay state cancelled for sourceUid={}", sourceUid, e);
             failed.add(new RelayFailure(sourceUid, e));
             return false;
         }

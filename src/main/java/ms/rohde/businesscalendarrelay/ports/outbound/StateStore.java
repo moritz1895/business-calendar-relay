@@ -22,6 +22,8 @@ public interface StateStore {
     /**
      * Upserts one relay state, keyed by {@link RelayState#sourceUid()}. Used after a
      * successful create or update send, with {@code active = true}.
+     *
+     * @throws StateStoreException if the underlying persistence operation fails
      */
     void save(RelayState state);
 
@@ -29,6 +31,8 @@ public interface StateStore {
      * Records that a {@code CANCEL} was sent at {@code sequence} for {@code sourceUid}.
      * The stored {@code blockerUid} is unchanged; {@code active} becomes {@code false}.
      * Deliberately not a delete.
+     *
+     * @throws StateStoreException if the underlying persistence operation fails
      */
     void markCancelled(String sourceUid, long sequence);
 }
