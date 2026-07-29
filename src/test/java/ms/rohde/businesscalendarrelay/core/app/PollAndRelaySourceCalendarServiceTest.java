@@ -269,4 +269,34 @@ class PollAndRelaySourceCalendarServiceTest {
         then(stateStore).should(times(1)).save(any());
         then(stateStore).should(never()).markCancelled(any(), anyLong());
     }
+
+    @Test
+    void pollAndRelay_givenOneStateSaveFailureAmongSeveral_thenContinuesCycleAndReportsFailureWithoutThrowing() {
+        given(calendarSource.readEvents())
+                .willReturn(List.of(
+                        new SourceEvent("source-fail", START, END, false, true, false, false),
+                        new SourceEvent("source-ok", START, END, false, true, false, false)));
+        given(stateStore.loadAll()).willReturn(List.of());
+
+        var failure = new RuntimeException("db unavailable");
+        var callCount = new AtomicInteger();
+        willAnswer(invocation -> {
+                    if (callCount.incrementAndGet() == 1) {
+                        throw failure;
+                    }
+                    return null;
+                })
+                .given(stateStore)
+                .save(any());
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).containsExactly("source-ok");
+        assertThat(result.failed()).hasSize(1);
+        assertThat(result.failed().getFirst().sourceUid()).isEqualTo("source-fail");
+        assertThat(result.failed().getFirst().cause()).isEqualTo(failure);
+
+        then(blockerSink).should(times(2)).send(any());
+        then(stateStore).should(times(2)).save(any());
+    }
 }

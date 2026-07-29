@@ -1,5 +1,6 @@
 package ms.rohde.businesscalendarrelay.core.domain;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Period;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -19,8 +20,9 @@ import ms.rohde.hexagonalarch.annotations.DomainService;
  * {@code recurringEventHorizon}:
  * <ul>
  *   <li>A source event with no prior {@link RelayState}, and eligible for creation per
- *       {@link #isEligibleForCreation} → {@link RelayAction.Create} with a freshly
- *       generated {@code blockerUid} at {@code sequence} 0.
+ *       {@link #isEligibleForCreation} → {@link RelayAction.Create} with a {@code
+ *       blockerUid} deterministically derived from {@code sourceUid} (see
+ *       {@link #deriveBlockerUid}) at {@code sequence} 0.
  *   <li>A source event with no prior {@link RelayState}, but <b>not</b> eligible for
  *       creation → no action at all for this cycle; it is re-evaluated against the gate
  *       fresh on every subsequent poll.
@@ -75,7 +77,7 @@ public final class RelayDiffPlanner {
                 if (isEligibleForCreation(event, now, recurringEventHorizon)) {
                     actions.add(new RelayAction.Create(
                             event.sourceUid(),
-                            UUID.randomUUID().toString(),
+                            deriveBlockerUid(event.sourceUid()),
                             0,
                             event.start(),
                             event.end(),
@@ -132,6 +134,18 @@ public final class RelayDiffPlanner {
             return false;
         }
         return !event.recurring() || !event.start().isAfter(now.plus(recurringEventHorizon));
+    }
+
+    /**
+     * Derives a stable {@code blockerUid} from {@code sourceUid} alone, rather than
+     * generating a fresh random one, so that a Create retried for the same source event
+     * — because a prior attempt's iMIP mail sent successfully but its {@link RelayState}
+     * never made it into the {@code StateStore} — produces the identical {@code
+     * blockerUid} (and, since sequence is always 0 for a Create, an identical resend)
+     * instead of a second, independent blocker appointment in Outlook.
+     */
+    private String deriveBlockerUid(String sourceUid) {
+        return UUID.nameUUIDFromBytes(sourceUid.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private boolean relayStateChanged(SourceEvent event, RelayState prior) {
