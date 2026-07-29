@@ -45,14 +45,18 @@ Poll eingetretenen Änderungen abzubilden.
 - Organisator- und Teilnehmeradresse sowie Absender-/Reply-To-Adresse für
   jeden aus diesem Kalender erzeugten Blocker sind konfiguriert.
 - Eine Uhr (`Clock`) ist verfügbar, aus der der `DTSTAMP`-Zeitstempel für
-  jede gerenderte iMIP-Nachricht abgeleitet wird.
+  jede gerenderte iMIP-Nachricht abgeleitet wird, sowie das `now`, gegen das
+  der Erstellungs-Filter jeden Zyklus frisch ausgewertet wird.
+- Ein Wiederholungs-Zeitfenster (`recurringEventHorizon`) ist konfiguriert
+  — global für alle Quellkalender, siehe README.
 
 #### Kommandofelder
 
 Ein Poll-Zyklus nimmt **kein ereignisspezifisches Eingabefeld** entgegen —
 er ist ein Auslöser, keine Anfrage zu einem bestimmten Termin. Der
-Quellkalender, die Identitätsadressen und die Uhr sind
-Use-Case-Konfiguration (Konstruktorargumente), keine Aufrufparameter.
+Quellkalender, die Identitätsadressen, die Uhr und das
+Wiederholungs-Zeitfenster sind Use-Case-Konfiguration (Konstruktorargumente),
+keine Aufrufparameter.
 
 #### Hauptablauf
 
@@ -64,20 +68,41 @@ Use-Case-Konfiguration (Konstruktorargumente), keine Aufrufparameter.
    abgesagte Einträge gleichermaßen. Das ist die einzige Lesung von
    `StateStore` in diesem Zyklus; sie bildet die Vergleichsbasis für die
    gesamte Diff-Entscheidung.
-3. `RelayDiffPlanner` berechnet aus `currentEvents` und `priorStates` eine
-   Liste von Aktionen — je Quelltermin höchstens eine Entscheidung:
-   - **Erstellung** für einen Quelltermin ohne vorherigen Zustand.
-   - **Aktualisierung** für einen aktiven Quelltermin mit geändertem
-     Zeitfenster, oder für einen zuvor abgesagten Quelltermin, der wieder
+3. `RelayDiffPlanner` berechnet aus `currentEvents`, `priorStates`, dem
+   aktuellen Zeitpunkt (`now`) und dem konfigurierten
+   `recurringEventHorizon` eine Liste von Aktionen — je Quelltermin
+   höchstens eine Entscheidung:
+   - **Erstellung** für einen Quelltermin ohne vorherigen Zustand, der
+     zusätzlich den Erstellungs-Filter besteht (`isEligibleForCreation` —
+     Start nicht in der Vergangenheit, nicht ganztägig, als "beschäftigt"
+     markiert, nicht storniert markiert und, nur bei wiederkehrenden
+     Terminen, Start innerhalb des konfigurierten
+     Wiederholungs-Zeitfensters). Besteht ein Quelltermin ohne vorherigen
+     Zustand diesen Filter nicht, wird er für diesen Zyklus einfach
+     übersprungen — kein Rendern, kein Versand, kein `RelayState`-Eintrag.
+     Er wird beim nächsten Poll erneut unvoreingenommen gegen den Filter
+     geprüft, ohne dass dafür eine eigene Logik nötig ist: Der Filter wird
+     ohnehin bei jedem Zyklus frisch gegen das dann aktuelle `now`
+     ausgewertet, sodass ein inzwischen ins Zeitfenster gerückter oder
+     anders markierter Termin automatisch berücksichtigt wird.
+   - **Aktualisierung** für einen aktiven Quelltermin, dessen Zeitfenster
+     oder dessen ganztägig-/beschäftigt-/storniert-Markierung sich
+     geändert hat, oder für einen zuvor abgesagten Quelltermin, der wieder
      vorhanden ist ("Wiederauferstehung" — kein Sonderfall, sondern
      natürliche Folge der Behandlung eines abgesagten Eintrags als
      aktualisierbar).
-   - **Keine Aktion** für einen aktiven Quelltermin mit unverändertem
-     Zeitfenster.
+   - **Keine Aktion** für einen aktiven Quelltermin ohne Abweichung in
+     einem dieser Felder.
    - **Absage** für einen vorher aktiven Quelltermin, der im aktuellen
      Poll nicht mehr vorhanden ist.
 
-   Die vollständigen Entscheidungsregeln stehen in `docs/domain.md`.
+   Der Erstellungs-Filter wird ausschließlich für den ersten Punkt oben
+   befragt — für jeden Quelltermin mit bereits vorhandenem `RelayState`
+   (aktiv oder bereits abgesagt) hat er keinerlei Einfluss; ein Blocker
+   wird auch weiterhin ausschließlich dann abgesagt, wenn sein Quelltermin
+   tatsächlich aus `CalendarSource.readEvents()` verschwindet, nie weil er
+   nachträglich den Filter nicht mehr bestehen würde. Die vollständigen
+   Entscheidungsregeln stehen in `docs/domain.md`.
 4. Für jede Erstellungs- oder Aktualisierungs-Aktion: Der Use Case baut ein
    `BlockerEvent` aus dem Zeitfenster der Aktion und den konfigurierten
    Identitätsadressen, rendert es mit `ImipCalendarRenderer.renderRequest`
@@ -152,12 +177,20 @@ hinaus).
 
 #### Randbedingungen ohne eigene Fallunterscheidung
 
-- Ein aktiver Quelltermin mit unverändertem Zeitfenster erzeugt **keine**
-  Aktion und taucht damit auch in keiner der vier `RelayCycleResult`-Listen
-  auf — ein "stiller" Zyklus für diesen Quelltermin ist der Normalfall,
-  nicht ein Fehler oder eine besondere Meldung.
+- Ein aktiver Quelltermin ohne Abweichung in Zeitfenster, ganztägig-,
+  beschäftigt- oder storniert-Markierung erzeugt **keine** Aktion und
+  taucht damit auch in keiner der vier `RelayCycleResult`-Listen auf — ein
+  "stiller" Zyklus für diesen Quelltermin ist der Normalfall, nicht ein
+  Fehler oder eine besondere Meldung.
 - Die "Wiederauferstehung" eines zuvor abgesagten Quelltermins ist keine
   eigene Fehlerbehandlung oder Sonderlogik im Use Case — sie ergibt sich
   ausschließlich aus der Domänenregel, abgesagte `RelayState`-Einträge
   aufzubewahren (siehe `docs/domain.md`), und wird vom Use Case identisch
   zu jeder anderen Aktualisierung behandelt.
+- Ein Quelltermin ohne vorherigen `RelayState`, der den Erstellungs-Filter
+  nicht besteht, erzeugt ebenfalls **keine** Aktion und taucht damit in
+  keiner der vier `RelayCycleResult`-Listen auf — insbesondere nicht in
+  `failed`, da es sich um keinen Fehler handelt. Er wird beim nächsten
+  Poll erneut unvoreingenommen gegen den Filter geprüft; es gibt keine
+  eigene Buchführung darüber, welche Quelltermine in einem Zyklus
+  übersprungen wurden.
