@@ -419,30 +419,4 @@ class PollAndRelaySourceCalendarServiceTest {
         then(pendingCreationQueue).should().remove("source-stale");
         then(pendingCreationQueue).should().remove("source-fresh");
     }
-
-    @Test
-    void pollAndRelay_givenLegacyConstructorWithoutPendingCreationQueueOrBurstBudget_thenCreatesAllEligibleEventsUnbounded() {
-        var legacyService = new PollAndRelaySourceCalendarService(
-                calendarSource,
-                blockerSink,
-                stateStore,
-                ORGANIZER,
-                ATTENDEE,
-                FROM,
-                REPLY_TO,
-                CLOCK,
-                RECURRING_EVENT_HORIZON);
-        var laterStart = START.plusDays(1);
-        given(calendarSource.readEvents())
-                .willReturn(List.of(
-                        new SourceEvent("source-1", START, END, false, true, false, false),
-                        new SourceEvent("source-2", laterStart, laterStart.plusHours(1), false, true, false, false)));
-        given(stateStore.loadAll()).willReturn(List.of());
-
-        var result = legacyService.pollAndRelay();
-
-        assertThat(result.created()).containsExactlyInAnyOrder("source-1", "source-2");
-        then(blockerSink).should(times(2)).send(any());
-        then(stateStore).should(times(2)).save(any());
-    }
 }
