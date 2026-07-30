@@ -2,6 +2,7 @@ package ms.rohde.businesscalendarrelay.config;
 
 import java.util.Set;
 import ms.rohde.businesscalendarrelay.adapters.outbound.caldav.CalDavCalendarSourceAdapter;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaCalendarReplicaStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaPendingCreationQueueAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaStateStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.throttling.InMemoryBurstBudgetAdapter;
@@ -26,25 +27,25 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
  * scan registers a bean definition for every such class purely based on the annotation,
  * regardless of whether the class actually has a no-arg-resolvable constructor.
  *
- * <p>{@link PollAndRelaySourceCalendarService}, {@link JpaStateStoreAdapter}, and
- * {@link JpaPendingCreationQueueAdapter} were never meant to be resolved as Spring beans
- * by type -- {@link RelayWiringConfiguration} constructs one instance of each per
- * configured calendar directly via {@code new}. {@link CalDavCalendarSourceAdapter} is
- * the same story. {@link InMemoryBurstBudgetAdapter} is not per-calendar (exactly one
- * shared instance exists), but hits the identical pitfall for a different reason: its
- * constructor takes {@code int}/{@code Duration} configuration values sourced from
- * {@code RelayProperties.initialization()}, which {@link RelayWiringConfiguration}'s
- * {@code relayBurstBudget} {@code @Bean} factory method already constructs explicitly --
- * an auto-scanned duplicate bean definition for the same class has no {@code int}/
- * {@code Duration} bean to satisfy those constructor parameters with. Left in place, any
- * of these five classes' auto-scanned bean definitions would still be eagerly
- * instantiated during context refresh and fail with an
+ * <p>{@link PollAndRelaySourceCalendarService}, {@link JpaStateStoreAdapter},
+ * {@link JpaPendingCreationQueueAdapter}, and {@link JpaCalendarReplicaStoreAdapter} were
+ * never meant to be resolved as Spring beans by type -- {@link RelayWiringConfiguration}
+ * constructs one instance of each per configured calendar directly via {@code new}.
+ * {@link CalDavCalendarSourceAdapter} is the same story. {@link InMemoryBurstBudgetAdapter}
+ * is not per-calendar (exactly one shared instance exists), but hits the identical pitfall
+ * for a different reason: its constructor takes {@code int}/{@code Duration} configuration
+ * values sourced from {@code RelayProperties.initialization()}, which
+ * {@link RelayWiringConfiguration}'s {@code relayBurstBudget} {@code @Bean} factory method
+ * already constructs explicitly -- an auto-scanned duplicate bean definition for the same
+ * class has no {@code int}/{@code Duration} bean to satisfy those constructor parameters
+ * with. Left in place, any of these six classes' auto-scanned bean definitions would still
+ * be eagerly instantiated during context refresh and fail with an
  * {@code UnsatisfiedDependencyException}.
  *
  * <p>Removing the bean definitions here (rather than e.g. {@code @Lazy} on the classes
  * themselves) keeps that intent honest: nothing in the application context ever
  * requests these types by type, so no bean definition should exist for them at all. It
- * also keeps the four non-shared, per-calendar classes free of any
+ * also keeps the five non-shared, per-calendar classes free of any
  * {@code org.springframework.*} annotation -- {@link PollAndRelaySourceCalendarService}
  * in particular lives in {@code core/app}, where {@code CLAUDE.md} forbids Spring
  * dependencies outright.
@@ -57,6 +58,7 @@ final class PerCalendarComponentBeanDefinitionPruner implements BeanDefinitionRe
             PollAndRelaySourceCalendarService.class.getName(),
             JpaStateStoreAdapter.class.getName(),
             JpaPendingCreationQueueAdapter.class.getName(),
+            JpaCalendarReplicaStoreAdapter.class.getName(),
             CalDavCalendarSourceAdapter.class.getName(),
             InMemoryBurstBudgetAdapter.class.getName());
 

@@ -21,6 +21,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +30,8 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import ms.rohde.businesscalendarrelay.core.domain.SourceEvent;
+import ms.rohde.businesscalendarrelay.ports.outbound.CachedCalendarResource;
+import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStore;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
 import ms.rohde.hexagonalarch.annotations.InfrastructureServiceAdapter;
 import net.fortuna.ical4j.data.CalendarBuilder;
@@ -52,6 +55,7 @@ import net.fortuna.ical4j.model.property.Transp;
 import net.fortuna.ical4j.model.property.Uid;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -60,38 +64,50 @@ import org.xml.sax.SAXException;
 
 /**
  * Reads the full current set of {@code VEVENT}s from one private CalDAV calendar
- * collection via a WebDAV {@code REPORT calendar-query}, RFC 4791 style.
+ * collection.
  *
  * <p>One instance per configured source calendar, per {@link CalendarSource}'s own
- * contract. Always issues a full {@code calendar-query} with no time-range restriction
- * and no {@code sync-collection} token — {@code sync-collection} (RFC 6578) delta sync
- * is deliberately out of scope for now, per the project {@code CLAUDE.md}.
+ * contract. {@code readEvents()}'s public contract is unchanged: it always returns a full,
+ * current {@link SourceEvent} snapshot, never a delta. Internally, it uses one of two
+ * mechanisms to obtain the raw CalDAV resources that snapshot is built from (see
+ * {@code docs/features/delta-sync.md}):
  *
- * <p>{@code VEVENT} components across every {@code calendar-data} blob in one response
- * are first grouped by {@code UID} (a series master and its {@code RECURRENCE-ID}
- * override components can arrive as separate CalDAV resources), then expanded per group:
- * a group without an {@code RRULE} on its master yields exactly one {@link SourceEvent}
- * as before; a group with an {@code RRULE} is expanded from the master's {@code DTSTART}
- * using ical4j's {@link Recur#getDates(Object, Temporal, Temporal)}, bounded forward at
- * {@code now.plus(recurringEventHorizon)} and deliberately left unbounded backward (see
- * {@code docs/features/event-filtering.md}'s "Auflösung von {@code EXDATE} und
- * {@code RECURRENCE-ID}" section). {@code EXDATE}-listed occurrences are dropped,
- * {@code RECURRENCE-ID} overrides replace their series-computed slot with the override's
- * own window, an override itself carrying {@code STATUS:CANCELLED} is dropped entirely,
- * and a {@code STATUS:CANCELLED} master propagates {@code cancelled = true} to every
- * occurrence still emitted for the series rather than dropping the series.
+ * <ul>
+ *   <li>An RFC 6578 {@code sync-collection} REPORT with a persisted sync-token, when
+ *       {@code deltaSyncEnabled} is {@code true} and the CalDAV server is not (yet) known
+ *       to reject the report. Only the resources reported changed or removed since the
+ *       last poll are transferred over the wire; the full raw-resource set is
+ *       reconstructed locally from {@link CalendarReplicaStore} before every expansion.
+ *   <li>The legacy, always-full RFC 4791 {@code calendar-query} REPORT with no time-range
+ *       restriction, used when {@code deltaSyncEnabled} is {@code false}, or once the
+ *       server has been observed to reject {@code sync-collection} (a permanent,
+ *       in-memory, non-persisted fallback for the remaining lifetime of this instance).
+ * </ul>
+ *
+ * <p>Whichever mechanism supplied the raw resources, the same unchanged pipeline turns
+ * them into {@link SourceEvent}s: {@code VEVENT} components across every {@code
+ * calendar-data} blob are first grouped by {@code UID} (a series master and its {@code
+ * RECURRENCE-ID} override components can arrive as separate CalDAV resources), then
+ * expanded per group: a group without an {@code RRULE} on its master yields exactly one
+ * {@link SourceEvent} as before; a group with an {@code RRULE} is expanded from the
+ * master's {@code DTSTART} using ical4j's {@link Recur#getDates(Object, Temporal,
+ * Temporal)}, bounded forward at {@code now.plus(recurringEventHorizon)} and deliberately
+ * left unbounded backward (see {@code docs/features/event-filtering.md}'s "Auflösung von
+ * {@code EXDATE} und {@code RECURRENCE-ID}" section). {@code EXDATE}-listed occurrences
+ * are dropped, {@code RECURRENCE-ID} overrides replace their series-computed slot with the
+ * override's own window, an override itself carrying {@code STATUS:CANCELLED} is dropped
+ * entirely, and a {@code STATUS:CANCELLED} master propagates {@code cancelled = true} to
+ * every occurrence still emitted for the series rather than dropping the series.
  *
  * <p>Deliberately not wired as an auto-scanned, no-arg Spring singleton bean: the
- * collection URL and credentials are per-calendar constructor arguments, not Spring
- * beans, the same resolution already used by {@code JpaStateStoreAdapter} for its
- * per-calendar {@code sourceCalendarId}. A later PR (multi-calendar configuration
- * wiring) constructs one instance per configured calendar via explicit {@code @Bean}
- * factory methods.
+ * collection URL, credentials, and {@link CalendarReplicaStore} instance are per-calendar
+ * constructor arguments, not Spring beans, the same resolution already used by {@code
+ * JpaStateStoreAdapter} for its per-calendar {@code sourceCalendarId}. {@code
+ * RelayWiringConfiguration} constructs one instance per configured calendar.
  *
- * <p>Basic credentials are sent directly on every request rather than relying on
- * {@code java.net.Authenticator} challenge-response, since CalDAV servers do not
- * reliably issue a clean {@code 401} challenge before accepting Basic auth on a
- * {@code REPORT}.
+ * <p>Basic credentials are sent directly on every request rather than relying on {@code
+ * java.net.Authenticator} challenge-response, since CalDAV servers do not reliably issue a
+ * clean {@code 401} challenge before accepting Basic auth on a {@code REPORT}.
  */
 @InfrastructureServiceAdapter
 public final class CalDavCalendarSourceAdapter implements CalendarSource {
@@ -103,6 +119,14 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
     private static final String CALDAV_NAMESPACE = "urn:ietf:params:xml:ns:caldav";
 
     private static final int MULTI_STATUS = 207;
+
+    private static final int FORBIDDEN = 403;
+
+    private static final int INSUFFICIENT_STORAGE = 507;
+
+    private static final int NOT_IMPLEMENTED = 501;
+
+    private static final int UNSUPPORTED_MEDIA_TYPE = 415;
 
     /**
      * Default zone applied to all-day ({@code VALUE=DATE}) occurrences, matching the
@@ -136,11 +160,43 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
             </C:calendar-query>
             """;
 
+    private static final String SYNC_COLLECTION_BODY_TEMPLATE =
+            """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <D:sync-collection xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+              <D:sync-token>%s</D:sync-token>
+              <D:sync-level>1</D:sync-level>
+              <D:prop>
+                <D:getetag/>
+                <C:calendar-data/>
+              </D:prop>
+            </D:sync-collection>
+            """;
+
     private final HttpClient httpClient;
     private final URI calendarCollectionUri;
     private final String basicCredentials;
     private final Clock clock;
     private final Period recurringEventHorizon;
+    private final CalendarReplicaStore calendarReplicaStore;
+    private final boolean deltaSyncEnabled;
+
+    /**
+     * Set once, permanently, in memory (never persisted) the first time this instance
+     * observes a {@code sync-collection} response recognized as a definite non-support
+     * signal -- see {@link #isDefinitelyUnsupportedResponse(HttpResponse)}. Once set,
+     * every subsequent {@link #readEvents()} call on this instance uses the legacy {@code
+     * calendar-query} request directly, without touching {@link #calendarReplicaStore} or
+     * attempting {@code sync-collection} again. A process restart resets this and
+     * re-attempts {@code sync-collection} once.
+     *
+     * <p>Deliberately narrow: an unrecognized status (e.g. a transient {@code 503 Service
+     * Unavailable}) does <em>not</em> set this flag -- see {@code
+     * docs/features/delta-sync.md}'s "Fehlerfälle — Ergänzungen", which explicitly calls
+     * out that permanently downgrading on a transient error would be wrong, since the next
+     * poll can simply retry {@code sync-collection} with the same, still-valid token.
+     */
+    private boolean deltaSyncPermanentlyDisabled;
 
     public CalDavCalendarSourceAdapter(
             HttpClient httpClient,
@@ -148,17 +204,317 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
             String username,
             String password,
             Clock clock,
-            Period recurringEventHorizon) {
+            Period recurringEventHorizon,
+            CalendarReplicaStore calendarReplicaStore,
+            boolean deltaSyncEnabled) {
         this.httpClient = httpClient;
         this.calendarCollectionUri = calendarCollectionUri;
         this.basicCredentials = Base64.getEncoder()
                 .encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
         this.clock = clock;
         this.recurringEventHorizon = recurringEventHorizon;
+        this.calendarReplicaStore = calendarReplicaStore;
+        this.deltaSyncEnabled = deltaSyncEnabled;
     }
 
     @Override
     public List<SourceEvent> readEvents() {
+        var allVEvents =
+                deltaSyncEnabled ? readAllVEventsViaDeltaSyncOrFallback() : readAllVEventsViaCalendarQuery();
+
+        var now = ZonedDateTime.now(clock);
+        var events = expandAll(allVEvents, now);
+
+        LOG.info("Read {} source event(s) from {}", events.size(), calendarCollectionUri);
+        return List.copyOf(events);
+    }
+
+    // --- sync-collection (RFC 6578) delta sync ---
+
+    private List<VEvent> readAllVEventsViaDeltaSyncOrFallback() {
+        if (deltaSyncPermanentlyDisabled) {
+            return readAllVEventsViaCalendarQuery();
+        }
+        try {
+            syncReplicaWithServer();
+        } catch (SyncCollectionUnsupportedException e) {
+            deltaSyncPermanentlyDisabled = true;
+            LOG.warn(
+                    "CalDAV server at {} rejected sync-collection with status {}; permanently falling back to"
+                            + " calendar-query for the remaining lifetime of this instance. Response body: {}",
+                    calendarCollectionUri,
+                    e.statusCode,
+                    e.responseBody);
+            return readAllVEventsViaCalendarQuery();
+        }
+        return toVEvents(loadReplicaResources());
+    }
+
+    private void syncReplicaWithServer() {
+        var token = loadSyncToken();
+        if (token == null) {
+            performInitialSync();
+        } else {
+            performIncrementalSync(token);
+        }
+    }
+
+    private void performInitialSync() {
+        var response = executeSyncCollection("");
+        if (response.statusCode() != MULTI_STATUS) {
+            throw unexpectedSyncCollectionResponse(response);
+        }
+        var result = parseSyncCollectionResponse(response.body());
+        resetReplica(result.newSyncToken(), result.changedResources());
+    }
+
+    private void performIncrementalSync(String token) {
+        var response = executeSyncCollection(token);
+        if (response.statusCode() == MULTI_STATUS) {
+            var result = parseSyncCollectionResponse(response.body());
+            applyReplicaDelta(result.newSyncToken(), result.changedResources(), result.removedHrefs());
+            return;
+        }
+        if (isInvalidSyncTokenResponse(response)) {
+            performInitialSync();
+            return;
+        }
+        throw unexpectedSyncCollectionResponse(response);
+    }
+
+    /**
+     * Classifies a {@code sync-collection} response that is neither {@code 207
+     * Multi-Status} nor a recognized invalid-sync-token response. Per {@code
+     * docs/features/delta-sync.md}'s "Fehlerfälle — Ergänzungen", only the specific,
+     * recognized non-support signals below permanently disable {@code sync-collection} for
+     * the remaining lifetime of this instance ({@link SyncCollectionUnsupportedException});
+     * every other, unrecognized status (e.g. a transient {@code 503 Service Unavailable})
+     * fails only the current poll cycle with a plain {@link CalDavCalendarSourceException}
+     * -- the next poll retries {@code sync-collection} with the same, still-valid token.
+     */
+    private RuntimeException unexpectedSyncCollectionResponse(HttpResponse<String> response) {
+        if (isDefinitelyUnsupportedResponse(response)) {
+            return new SyncCollectionUnsupportedException(response.statusCode(), response.body());
+        }
+        return new CalDavCalendarSourceException("Unexpected sync-collection REPORT response status "
+                + response.statusCode() + " from " + calendarCollectionUri);
+    }
+
+    /**
+     * The specific, recognized signals that a CalDAV server does not support {@code
+     * sync-collection} at all for this collection: {@code 501 Not Implemented}, {@code 415
+     * Unsupported Media Type}, or a {@code 403 Forbidden} that does <em>not</em> carry the
+     * {@code <D:valid-sync-token/>} precondition (e.g. a {@code <D:supported-report/>}
+     * precondition per RFC 3253, or no recognizable precondition body at all). Deliberately
+     * narrower than "any non-207, non-invalid-token response" -- an unrecognized status
+     * outside this set is treated as a transient failure of the current cycle only, not as
+     * evidence the server lacks {@code sync-collection} support.
+     */
+    private boolean isDefinitelyUnsupportedResponse(HttpResponse<String> response) {
+        if (response.statusCode() == NOT_IMPLEMENTED || response.statusCode() == UNSUPPORTED_MEDIA_TYPE) {
+            return true;
+        }
+        return response.statusCode() == FORBIDDEN && !containsValidSyncTokenPrecondition(response.body());
+    }
+
+    private HttpResponse<String> executeSyncCollection(String syncToken) {
+        return executeReport(SYNC_COLLECTION_BODY_TEMPLATE.formatted(escapeXml(syncToken)));
+    }
+
+    private @Nullable String loadSyncToken() {
+        try {
+            return calendarReplicaStore.loadSyncToken();
+        } catch (RuntimeException e) {
+            throw new CalDavCalendarSourceException(
+                    "Failed to load sync-token from calendar replica store for " + calendarCollectionUri, e);
+        }
+    }
+
+    private List<CachedCalendarResource> loadReplicaResources() {
+        try {
+            return calendarReplicaStore.loadAllResources();
+        } catch (RuntimeException e) {
+            throw new CalDavCalendarSourceException(
+                    "Failed to load cached resources from calendar replica store for " + calendarCollectionUri, e);
+        }
+    }
+
+    private void resetReplica(String newSyncToken, List<CachedCalendarResource> resources) {
+        try {
+            calendarReplicaStore.resetTo(newSyncToken, resources);
+        } catch (RuntimeException e) {
+            throw new CalDavCalendarSourceException(
+                    "Failed to reset calendar replica store for " + calendarCollectionUri, e);
+        }
+    }
+
+    private void applyReplicaDelta(
+            String newSyncToken, List<CachedCalendarResource> upserted, List<String> removedHrefs) {
+        try {
+            calendarReplicaStore.applyDelta(newSyncToken, upserted, removedHrefs);
+        } catch (RuntimeException e) {
+            throw new CalDavCalendarSourceException(
+                    "Failed to apply calendar replica delta for " + calendarCollectionUri, e);
+        }
+    }
+
+    private List<VEvent> toVEvents(List<CachedCalendarResource> resources) {
+        var allVEvents = new ArrayList<VEvent>();
+        for (var resource : resources) {
+            allVEvents.addAll(parseVEvents(resource.rawCalendarData()));
+        }
+        return allVEvents;
+    }
+
+    /**
+     * Result of one {@code sync-collection} REPORT exchange: the token to persist for the
+     * next incremental request, every resource reported new or changed (with its raw
+     * {@code calendar-data} and {@code etag}), and the {@code href}s of every resource
+     * reported removed.
+     */
+    private record SyncCollectionResult(
+            String newSyncToken, List<CachedCalendarResource> changedResources, List<String> removedHrefs) {}
+
+    private SyncCollectionResult parseSyncCollectionResponse(String multiStatusXml) {
+        Document document;
+        try {
+            document = newSecureDocumentBuilder().parse(new InputSource(new StringReader(multiStatusXml)));
+        } catch (SAXException | IOException e) {
+            throw new CalDavCalendarSourceException(
+                    "Malformed sync-collection multistatus XML from " + calendarCollectionUri, e);
+        }
+
+        var syncTokenNodes = document.getElementsByTagNameNS(DAV_NAMESPACE, "sync-token");
+        if (syncTokenNodes.getLength() == 0) {
+            throw new CalDavCalendarSourceException("sync-collection multistatus response from "
+                    + calendarCollectionUri + " is missing a top-level sync-token");
+        }
+        var newSyncToken = syncTokenNodes.item(0).getTextContent().trim();
+
+        var changedResources = new LinkedHashMap<String, CachedCalendarResource>();
+        var removedHrefs = new LinkedHashSet<String>();
+
+        var responses = document.getElementsByTagNameNS(DAV_NAMESPACE, "response");
+        for (int i = 0; i < responses.getLength(); i++) {
+            var response = (Element) responses.item(i);
+            var hrefNodes = response.getElementsByTagNameNS(DAV_NAMESPACE, "href");
+            if (hrefNodes.getLength() == 0) {
+                continue;
+            }
+            var href = hrefNodes.item(0).getTextContent().trim();
+
+            var directStatus = directChildElement(response, DAV_NAMESPACE, "status");
+            if (directStatus.isPresent()) {
+                if (isNotFoundStatus(directStatus.get())) {
+                    removedHrefs.add(href);
+                }
+                continue;
+            }
+
+            var propstats = response.getElementsByTagNameNS(DAV_NAMESPACE, "propstat");
+            for (int j = 0; j < propstats.getLength(); j++) {
+                var propstat = (Element) propstats.item(j);
+                if (!isSuccessStatus(propstat)) {
+                    continue;
+                }
+                var etagNodes = propstat.getElementsByTagNameNS(DAV_NAMESPACE, "getetag");
+                var calendarDataNodes = propstat.getElementsByTagNameNS(CALDAV_NAMESPACE, "calendar-data");
+                if (etagNodes.getLength() == 0 || calendarDataNodes.getLength() == 0) {
+                    continue;
+                }
+                changedResources.put(
+                        href,
+                        new CachedCalendarResource(
+                                href,
+                                etagNodes.item(0).getTextContent(),
+                                calendarDataNodes.item(0).getTextContent()));
+            }
+        }
+
+        return new SyncCollectionResult(newSyncToken, List.copyOf(changedResources.values()), List.copyOf(removedHrefs));
+    }
+
+    private Optional<Element> directChildElement(Element parent, String namespaceUri, String localName) {
+        var children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element element
+                    && namespaceUri.equals(element.getNamespaceURI())
+                    && localName.equals(element.getLocalName())) {
+                return Optional.of(element);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean isNotFoundStatus(Element statusElement) {
+        var statusLine = statusElement.getTextContent().trim();
+        var parts = statusLine.split("\\s+");
+        return parts.length >= 2 && "404".equals(parts[1]);
+    }
+
+    private boolean isInvalidSyncTokenResponse(HttpResponse<String> response) {
+        if (response.statusCode() == INSUFFICIENT_STORAGE) {
+            return true;
+        }
+        return response.statusCode() == FORBIDDEN && containsValidSyncTokenPrecondition(response.body());
+    }
+
+    private boolean containsValidSyncTokenPrecondition(String body) {
+        Document document;
+        try {
+            document = newSecureDocumentBuilder().parse(new InputSource(new StringReader(body)));
+        } catch (SAXException | IOException e) {
+            return false;
+        }
+        var errorNodes = document.getElementsByTagNameNS(DAV_NAMESPACE, "error");
+        for (int i = 0; i < errorNodes.getLength(); i++) {
+            var error = (Element) errorNodes.item(i);
+            if (error.getElementsByTagNameNS(DAV_NAMESPACE, "valid-sync-token").getLength() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String escapeXml(String value) {
+        var builder = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            var c = value.charAt(i);
+            switch (c) {
+                case '&' -> builder.append("&amp;");
+                case '<' -> builder.append("&lt;");
+                case '>' -> builder.append("&gt;");
+                case '"' -> builder.append("&quot;");
+                case '\'' -> builder.append("&apos;");
+                default -> builder.append(c);
+            }
+        }
+        return builder.toString();
+    }
+
+    /**
+     * Internal control-flow signal only, never thrown out of {@link #readEvents()}: raised
+     * only for the specific, recognized non-support signals in
+     * {@link #isDefinitelyUnsupportedResponse(HttpResponse)}, meaning the server is treated
+     * as not supporting {@code sync-collection} for this collection at all. Any other
+     * unexpected response status is a plain {@link CalDavCalendarSourceException} instead,
+     * failing only the current poll cycle without setting the permanent fallback flag.
+     */
+    private static final class SyncCollectionUnsupportedException extends RuntimeException {
+
+        private final int statusCode;
+        private final String responseBody;
+
+        private SyncCollectionUnsupportedException(int statusCode, String responseBody) {
+            super("sync-collection unsupported: status " + statusCode);
+            this.statusCode = statusCode;
+            this.responseBody = responseBody;
+        }
+    }
+
+    // --- calendar-query (RFC 4791) legacy full read ---
+
+    private List<VEvent> readAllVEventsViaCalendarQuery() {
         var response = executeCalendarQuery();
 
         if (response.statusCode() != MULTI_STATUS) {
@@ -170,17 +526,16 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
         for (var calendarData : extractCalendarDataBlobs(response.body())) {
             allVEvents.addAll(parseVEvents(calendarData));
         }
-
-        var now = ZonedDateTime.now(clock);
-        var events = expandAll(allVEvents, now);
-
-        LOG.info("Read {} source event(s) from {}", events.size(), calendarCollectionUri);
-        return List.copyOf(events);
+        return allVEvents;
     }
 
     private HttpResponse<String> executeCalendarQuery() {
+        return executeReport(CALENDAR_QUERY_BODY);
+    }
+
+    private HttpResponse<String> executeReport(String body) {
         var request = HttpRequest.newBuilder(calendarCollectionUri)
-                .method("REPORT", HttpRequest.BodyPublishers.ofString(CALENDAR_QUERY_BODY, StandardCharsets.UTF_8))
+                .method("REPORT", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .header("Depth", "1")
                 .header("Content-Type", "application/xml; charset=utf-8")
                 .header("Authorization", "Basic " + basicCredentials)

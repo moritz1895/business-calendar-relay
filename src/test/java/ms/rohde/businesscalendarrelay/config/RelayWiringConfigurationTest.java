@@ -7,6 +7,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Period;
 import java.util.List;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarReplicaResourceJpaRepository;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarSyncTokenJpaRepository;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.PendingCreationJpaRepository;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.RelayStateJpaRepository;
 import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
@@ -36,6 +38,12 @@ class RelayWiringConfigurationTest {
     private PendingCreationJpaRepository pendingCreationJpaRepository;
 
     @Mock
+    private CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository;
+
+    @Mock
+    private CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository;
+
+    @Mock
     private BurstBudget burstBudget;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -60,6 +68,8 @@ class RelayWiringConfigurationTest {
                 blockerSink,
                 relayStateJpaRepository,
                 pendingCreationJpaRepository,
+                calendarReplicaResourceJpaRepository,
+                calendarSyncTokenJpaRepository,
                 burstBudget);
 
         assertThat(useCases).hasSize(3);
@@ -79,6 +89,8 @@ class RelayWiringConfigurationTest {
                 blockerSink,
                 relayStateJpaRepository,
                 pendingCreationJpaRepository,
+                calendarReplicaResourceJpaRepository,
+                calendarSyncTokenJpaRepository,
                 burstBudget);
 
         assertThat(useCases).isEmpty();
@@ -100,6 +112,7 @@ class RelayWiringConfigurationTest {
                 "organizer-" + id + "@example.com",
                 "business@example.com",
                 "relay@example.com",
-                "organizer-" + id + "@example.com");
+                "organizer-" + id + "@example.com",
+                true);
     }
 }
