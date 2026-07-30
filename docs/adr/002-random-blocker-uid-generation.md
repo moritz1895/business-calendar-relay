@@ -1,7 +1,12 @@
 # ADR-002: Zufällige `blockerUid`-Generierung, unabhängig von `sourceUid`
 
 **Datum:** 2026-07-28
-**Status:** Angenommen
+**Status:** Überholt — siehe ADR-010 (2026-07-29, `fix/deterministic-blocker-uid`,
+PR #15). Der `UUID.randomUUID()`-Ansatz dieser ADR erzeugte bei einem
+Retry einer nicht persistierten Erstellung einen doppelten, unabhängigen
+Blocker in Outlook; ADR-010 ersetzt ihn durch eine deterministische
+Ableitung aus `sourceUid`. Der Kontext unten bleibt als historische
+Begründung der ursprünglichen Entscheidung erhalten.
 
 ## Kontext
 
