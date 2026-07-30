@@ -73,20 +73,89 @@ von **allen** konfigurierten Kalender-Adapterinstanzen gemeinsam genutzt.
 
 ## Mapping `VEVENT` → `SourceEvent`
 
-Jede `VEVENT`-Komponente wird direkt (1:1, keine `RRULE`-Expansion — wiederkehrende
-Serien sind out of scope, siehe `CLAUDE.md`) auf ein `SourceEvent`
-(`core/domain/SourceEvent.java`) abgebildet:
+Alle über sämtliche `calendar-data`-Blobs einer Antwort geparsten `VEVENT`s
+werden zuerst per `UID` gruppiert (`expandAll`, `LinkedHashMap<String,
+List<VEvent>>`) — ein Serien-Master und seine `RECURRENCE-ID`-Override-
+Komponenten können als getrennte CalDAV-Ressourcen zurückkommen und müssen
+vor der Expansion zusammengeführt werden. Fehlt die `UID` auf einer
+Komponente, wirft der Adapter eine `CalDavCalendarSourceException`.
 
-- `UID` — Pflichtfeld; fehlt es, wirft der Adapter eine
+Innerhalb einer `UID`-Gruppe (`expandSeries`) wird die Komponente ohne
+`RECURRENCE-ID`-Property als Master behandelt, jede Komponente mit
+`RECURRENCE-ID` als Override. Fehlt ein Master (nur Override-Komponenten
+vorhanden), wirft der Adapter eine `CalDavCalendarSourceException`.
+
+### Einzeltermin (kein `RRULE` am Master)
+
+Trägt der Master kein `RRULE`, wird er unverändert 1:1 auf genau ein
+`SourceEvent` (`core/domain/SourceEvent.java`) abgebildet (`toSingleSourceEvent`),
+`sourceUid` bleibt die reine `VEVENT`-`UID`, `recurring = false`.
+
+### Wiederkehrende Serie (`RRULE` am Master)
+
+Trägt der Master ein `RRULE`, wird die Serie ab `masterDtStart` expandiert
+(`expandRecurringSeries`):
+
+- Der `RRULE`-Wert wird über `net.fortuna.ical4j.model.Recur` geparst
+  (`new Recur<ZonedDateTime>(rruleProperty.getValue())`); ein nicht
+  parsbarer oder nicht expandierbarer `RRULE`-Wert wirft eine
   `CalDavCalendarSourceException`.
-- `DTSTART`/`DTEND` — Pflichtfelder, werden in `ZonedDateTime` umgewandelt:
-  - Trägt die Property ein `TZID`-Parameter, wird die `ZonedDateTime` mit
-    dieser `ZoneId` gebaut (`ZoneId.of(tzId)`).
-  - Andernfalls, falls die Property als UTC markiert ist (`Z`-Suffix), wird
-    `ZoneOffset.UTC` verwendet.
-  - Fehlen beide (weder `TZID` noch UTC-Designator), wirft der Adapter eine
-    `CalDavCalendarSourceException` — ein reines Datum ohne Zeitkomponente
-    oder ohne Zeitzonenbezug wird nicht unterstützt.
+- Die Vorkommen-Startzeitpunkte kommen aus
+  `Recur.getDates(masterStart, UNBOUNDED_PAST, horizonEnd)`. `UNBOUNDED_PAST`
+  ist eine feste Konstante (`0001-01-01T00:00Z`) — die Expansion ist rückwärts
+  bewusst unbegrenzt. `horizonEnd` ist `now.plus(recurringEventHorizon)`, wobei
+  `now = ZonedDateTime.now(clock)` (der injizierte `Clock`, pro `readEvents()`-
+  Aufruf neu bestimmt) und `recurringEventHorizon` ein `Period`-
+  Konstruktor-Parameter des Adapters ist, gebunden aus `relay.recurring-event-
+  horizon` (`RelayProperties`, Default `P6M`) und global für alle
+  konfigurierten Kalender geteilt.
+- `EXDATE`-Werte des Masters werden vorab in ein `Set<ZonedDateTime>`
+  aufgelöst (`exceptionDates`); jeder berechnete Vorkommen-Zeitpunkt, der
+  darin enthalten ist, wird übersprungen — kein `SourceEvent` für diesen
+  Zeitpunkt.
+- `RECURRENCE-ID`-Overrides werden vorab in eine `Map<ZonedDateTime, VEvent>`
+  aufgelöst (`overridesByRecurrenceId`), Schlüssel ist der
+  `RECURRENCE-ID`-Wert. Tragen mehrere Override-Komponenten dieselbe
+  `RECURRENCE-ID`, gewinnt die mit der höheren `SEQUENCE` (`sequenceNumber`,
+  Default `0` ohne `SEQUENCE`-Property).
+- `EXDATE`- und `RECURRENCE-ID`-Werte werden mit derselben "Form"
+  (`VALUE=DATE` ja/nein, `TZID`-Zone bzw. UTC) wie `masterDtStart` interpretiert
+  (`DateForm`-Record, einmalig pro Master berechnet, `formOf`) — beide teilen
+  laut RFC 5545 die Form ihres Masters.
+- Für jeden verbleibenden, aufsteigend sortierten Vorkommen-Zeitpunkt wird
+  `sourceUid = uid + "#" + occurrenceStart.toInstant()` gebildet (der
+  zusammengesetzte Schlüssel aus `docs/domain.md`, Abschnitt
+  "Zusammengesetzter `sourceUid` für wiederkehrende Termine"):
+  - **Kein Override für diesen Zeitpunkt:** `start`/`end` ergeben sich aus
+    `occurrenceStart` plus der Master-Dauer (`masterDtEnd - masterDtStart`),
+    `allDay`/`busy` kommen vom Master, `recurring = true`.
+  - **Override mit `STATUS:CANCELLED`:** das Vorkommen wird komplett
+    ausgelassen — kein `SourceEvent`, analog zu einem `EXDATE`-Treffer.
+  - **Override ohne `STATUS:CANCELLED`:** `start`/`end`/`allDay`/`busy` kommen
+    vom Override-`VEVENT` selbst (eigenes `DTSTART`/`DTEND`), `sourceUid`
+    bleibt der oben gebildete, auf dem ursprünglichen Serien-Zeitpunkt
+    basierende Schlüssel, `recurring = true`.
+  - `cancelled` jedes ausgegebenen Vorkommens ist `true`, sobald der Master
+    selbst `STATUS:CANCELLED` trägt (`masterCancelled`) — die gesamte Serie
+    wird dadurch **nicht** aus der Ausgabe entfernt, sondern jedes Vorkommen
+    trägt das Flag weiter (siehe `docs/features/event-filtering.md`).
+
+### `DTSTART`/`DTEND` → `ZonedDateTime`
+
+Pflichtfelder auf jeder Master-, Override- oder Einzeltermin-Komponente;
+fehlen sie, wirft der Adapter eine `CalDavCalendarSourceException`
+(`requireDtStart`/`requireDtEnd`). Umwandlung in `ZonedDateTime`
+(`toZonedDateTime`):
+
+- Ist die Property `VALUE=DATE` (ganztägig), wird Mitternacht in der fest
+  verdrahteten Zone `ALL_DAY_ZONE` (`Europe/Berlin`) verwendet und `allDay =
+  true` gesetzt.
+- Andernfalls, trägt die Property ein `TZID`-Parameter, wird die
+  `ZonedDateTime` mit dieser `ZoneId` gebaut (`ZoneId.of(tzId)`).
+- Andernfalls, falls die Property als UTC markiert ist (`Z`-Suffix), wird
+  `ZoneOffset.UTC` verwendet.
+- Fehlen alle drei (weder `VALUE=DATE` noch `TZID` noch UTC-Designator),
+  wirft der Adapter eine `CalDavCalendarSourceException`.
 
 Jeder Fehlerfall (unerwarteter Statuscode, IO-Fehler, malformed XML,
 malformed ICS, fehlende Pflichtfelder) resultiert in einer
@@ -117,5 +186,6 @@ Mechanismus.
 - Keine `sync-collection`-Delta-Abfrage (RFC 6578) — jeder Poll-Zyklus liest
   den vollständigen aktuellen Bestand neu.
 - Keine `time-range`-Filterung im `calendar-query`-Filter.
-- Keine Expansion wiederkehrender Serien (`RRULE`); nur die konkrete
-  `VEVENT`-Komponente wird gelesen.
+- Kein `RDATE` — nur `RRULE`, `EXDATE` und `RECURRENCE-ID` werden bei der
+  Serien-Expansion ausgewertet (siehe "Wiederkehrende Serie" oben); `RDATE`
+  wird nicht gesondert unterstützt.
