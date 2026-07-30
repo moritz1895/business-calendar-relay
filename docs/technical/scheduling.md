@@ -129,23 +129,34 @@ aufgrund der Annotation, unabhängig davon, ob die Klasse tatsächlich einen
 Spring-auflösbaren (no-arg oder komplett Bean-referenzierbaren) Konstruktor
 hat.
 
-Drei Klassen sind davon betroffen, weil ihre Konstruktoren
+Fünf Klassen sind davon betroffen. Vier, weil ihre Konstruktoren
 Kalender-spezifische `String`/`URI`-Werte statt Spring-Bean-Referenzen
 erwarten:
 
 - `PollAndRelaySourceCalendarService` (`core/app`)
 - `JpaStateStoreAdapter` (`adapters/outbound/persistence`)
+- `JpaPendingCreationQueueAdapter` (`adapters/outbound/persistence`, seit
+  Issue #16, `docs/features/burst-filter-initialization.md`)
 - `CalDavCalendarSourceAdapter` (`adapters/outbound/caldav`)
 
-Unbehandelt würde Spring versuchen, diese drei Klassen während des
+Die fünfte, `InMemoryBurstBudgetAdapter` (`adapters/outbound/throttling`,
+ebenfalls seit Issue #16), ist **nicht** pro Kalender, sondern eine einzige,
+geteilte Instanz — trifft aber dieselbe Falle aus einem anderen Grund: ihr
+Konstruktor erwartet `int`/`Duration`-Konfigurationswerte aus
+`RelayProperties.initialization()`, für die es ebenfalls keinen passenden
+Spring-Bean gibt; `RelayWiringConfiguration`s `relayBurstBudget`-`@Bean`-
+Factory-Methode baut die eine tatsächlich verwendete Instanz bereits von
+Hand.
+
+Unbehandelt würde Spring versuchen, alle fünf Klassen während des
 Context-Refresh als parameterlose Singletons zu instanziieren, und mit einer
-`UnsatisfiedDependencyException` scheitern, da kein Bean vom Typ
-`String`/`URI` existiert, um die Konstruktoren zu befriedigen.
+`UnsatisfiedDependencyException` scheitern, da kein passender Bean
+existiert, um die jeweiligen Konstruktoren zu befriedigen.
 
 ### Die Lösung: `PerCalendarComponentBeanDefinitionPruner`
 
 `config/PerCalendarComponentBeanDefinitionPruner.java` ist ein
-`BeanDefinitionRegistryPostProcessor`, der die drei betroffenen,
+`BeanDefinitionRegistryPostProcessor`, der die fünf betroffenen,
 auto-gescannten Bean-Definitionen (per exaktem Klassennamen-Abgleich)
 entfernt, **bevor** irgendeine Singleton-Vorinstanziierung stattfinden kann:
 
@@ -184,7 +195,7 @@ Klassen mit `@Lazy` zu versehen, ist bewusst: Nichts im Anwendungskontext
 fragt diese Typen je über den Spring-Typ-Mechanismus an — sie werden
 ausschließlich manuell über `new` in `RelayWiringConfiguration` konstruiert.
 Es soll also erst gar keine Bean-Definition für sie existieren. Das hält
-zusätzlich alle drei betroffenen Klassen frei von jeder
+zusätzlich alle vier betroffenen Klassen frei von jeder
 `org.springframework.*`-Annotation — für
 `PollAndRelaySourceCalendarService` (in `core/app`) ist das keine
 Stiloption, sondern von `CLAUDE.md` verbindlich vorgeschrieben.

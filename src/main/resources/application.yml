@@ -35,6 +35,12 @@ relay:
   # single value shared across every configured calendar, like `poll-interval` above,
   # not a per-calendar setting. Defaults to `P6M` (6 months) when omitted.
   # recurring-event-horizon: ${RELAY_RECURRING_EVENT_HORIZON:P6M}
+  # `initialization.burst-size`/`initialization.burst-interval` throttle exclusively the
+  # one-time initialization of a calendar (issue #16) -- mailbox-wide across all
+  # configured calendars combined, not per calendar. Defaults: 5 creations per hour.
+  # initialization:
+  #   burst-size: ${RELAY_INITIALIZATION_BURST_SIZE:5}
+  #   burst-interval: ${RELAY_INITIALIZATION_BURST_INTERVAL:PT1H}
   # `calendars` is deliberately left empty here so the application starts cleanly with
   # zero source calendars configured (e.g. in CI). Real deployments supply their own
   # calendar list, one entry per private source calendar, via an external config file

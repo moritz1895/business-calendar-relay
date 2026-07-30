@@ -7,9 +7,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Period;
 import java.util.List;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.PendingCreationJpaRepository;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.RelayStateJpaRepository;
 import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
+import ms.rohde.businesscalendarrelay.ports.outbound.BurstBudget;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -30,20 +32,35 @@ class RelayWiringConfigurationTest {
     @Mock
     private RelayStateJpaRepository relayStateJpaRepository;
 
+    @Mock
+    private PendingCreationJpaRepository pendingCreationJpaRepository;
+
+    @Mock
+    private BurstBudget burstBudget;
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Clock clock = Clock.systemUTC();
 
     private static final Period RECURRING_EVENT_HORIZON = Period.ofMonths(6);
+    private static final RelayProperties.InitializationProperties INITIALIZATION =
+            new RelayProperties.InitializationProperties(5, Duration.ofHours(1));
 
     @Test
     void buildUseCases_givenThreeCalendarConfigs_thenReturnsThreeMappedUseCases() {
         var relayProperties = new RelayProperties(
                 Duration.ofMinutes(5),
                 List.of(calendarConfig("calendar-a"), calendarConfig("calendar-b"), calendarConfig("calendar-c")),
-                RECURRING_EVENT_HORIZON);
+                RECURRING_EVENT_HORIZON,
+                INITIALIZATION);
 
         var useCases = RelayWiringConfiguration.buildUseCases(
-                relayProperties, httpClient, clock, blockerSink, relayStateJpaRepository);
+                relayProperties,
+                httpClient,
+                clock,
+                blockerSink,
+                relayStateJpaRepository,
+                pendingCreationJpaRepository,
+                burstBudget);
 
         assertThat(useCases).hasSize(3);
         assertThat(useCases).allSatisfy(
@@ -52,17 +69,24 @@ class RelayWiringConfigurationTest {
 
     @Test
     void buildUseCases_givenNoCalendarConfigs_thenReturnsEmptyList() {
-        var relayProperties = new RelayProperties(Duration.ofMinutes(5), List.of(), RECURRING_EVENT_HORIZON);
+        var relayProperties =
+                new RelayProperties(Duration.ofMinutes(5), List.of(), RECURRING_EVENT_HORIZON, INITIALIZATION);
 
         var useCases = RelayWiringConfiguration.buildUseCases(
-                relayProperties, httpClient, clock, blockerSink, relayStateJpaRepository);
+                relayProperties,
+                httpClient,
+                clock,
+                blockerSink,
+                relayStateJpaRepository,
+                pendingCreationJpaRepository,
+                burstBudget);
 
         assertThat(useCases).isEmpty();
     }
 
     @Test
     void relayProperties_givenNullCalendars_thenDefaultsToEmptyList() {
-        var relayProperties = new RelayProperties(Duration.ofMinutes(5), null, RECURRING_EVENT_HORIZON);
+        var relayProperties = new RelayProperties(Duration.ofMinutes(5), null, RECURRING_EVENT_HORIZON, INITIALIZATION);
 
         assertThat(relayProperties.calendars()).isEmpty();
     }

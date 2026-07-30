@@ -99,6 +99,72 @@ festen Offset, was `RelayState`s Änderungserkennung bricht — die auf
 `ZonedDateTime.equals(Object)` beruht, was dieselbe `ZoneId`-Instanz
 vergleicht, nicht nur denselben Zeitpunkt.
 
+## Schema: `pending_creation`
+
+Zweite Tabelle, seit dem Burst-Filter-Feature für die Erstinitialisierung eines
+Kalenders (Issue #16, `docs/features/burst-filter-initialization.md`),
+abgebildet über `PendingCreationEntity`
+(`adapters/outbound/persistence/PendingCreationEntity.java`) — strukturell
+ein direktes Geschwister von `RelayStateEntity`, aber ein eigener, dedizierter
+Port (`PendingCreationQueue`) und eine eigene Tabelle statt einer Erweiterung
+von `relay_state`, weil `RelayState`s Invarianten fachlich nicht zum Zustand
+"existiert noch gar nicht als Blocker, wartet nur auf seinen Sendezeitpunkt"
+passen:
+
+| Spalte | Typ (Java) | Nullable | Beschreibung |
+|---|---|---|---|
+| `source_calendar_id` | `String` | nein, unveränderlich | Teil des zusammengesetzten Primärschlüssels; entspricht `relay.calendars[].id` |
+| `source_uid` | `String` | nein, unveränderlich | Teil des zusammengesetzten Primärschlüssels; `UID` des Quell-`VEVENT` |
+| `blocker_uid` | `String` | nein | bereits deterministisch abgeleitete `blockerUid` dieser künftigen Erstanlage |
+| `start` | `String` (konvertiert aus `ZonedDateTime`) | nein | `DTSTART` des Quell-Events zum Capture-Zeitpunkt, über denselben `ZonedDateTimeStringConverter` wie `last_known_start` bei `relay_state`, aus Konsistenzgründen |
+| `end` | `String` (konvertiert aus `ZonedDateTime`) | nein | analog, `DTEND` zum Capture-Zeitpunkt |
+| `all_day` | `boolean` | nein | Ganztägig-Status des auslösenden `SourceEvent` zum Capture-Zeitpunkt |
+| `busy` | `boolean` | nein | Beschäftigt-Status, analog |
+| `cancelled` | `boolean` | nein | Storniert-Status, analog |
+
+Bewusst **kein** `sequence`- oder `active`-Feld — beides ist für diese
+Tabelle bedeutungslos: `sequence` ist für eine Erstanlage strukturell immer
+`0`, und "aktiv" hat hier keine eigene Bedeutung, da eine Zeile entweder in
+der Tabelle existiert (dann ausstehend) oder nicht mehr (dann versendet oder
+als veraltet verworfen). Primärschlüssel zusammengesetzt aus
+`(source_calendar_id, source_uid)`, über `@IdClass(PendingCreationEntityId.class)`
+abgebildet, genau wie bei `relay_state`. Anders als `relay_state` werden
+Zeilen hier tatsächlich gelöscht, sobald sie gedraint oder als veraltet
+verworfen wurden — die Tabelle ist eine echte Warteschlange, keine
+dauerhafte Historie. `ddl-auto: update` legt die Tabelle automatisch an,
+keine manuelle Migration nötig.
+
+`start` und `end` sind in H2 (wie in vielen SQL-Dialekten) reservierte
+Schlüsselwörter -- `end` insbesondere kollidiert mit H2s eigener
+`CASE ... END`-Syntax und lässt die generierte `CREATE TABLE`-DDL sonst mit
+einem Syntaxfehler scheitern. `PendingCreationEntity` mappt beide Spalten
+deshalb über Hibernates Backtick-Escaping (`@Column(name = "`start`")` bzw.
+`` "`end`" ``), was Hibernate automatisch in die dialektspezifische
+Quotierung übersetzt (bei H2 doppelte Anführungszeichen), ohne den
+eigentlichen Spaltennamen zu verändern.
+
+`JpaPendingCreationQueueAdapter implements PendingCreationQueue`
+(`adapters/outbound/persistence/JpaPendingCreationQueueAdapter.java`) folgt
+strukturell exakt `JpaStateStoreAdapter`s Aufbau: Konstruktor nimmt ein
+geteiltes `PendingCreationJpaRepository` (`PendingCreationJpaRepository.java`)
+und die pro-Kalender-`sourceCalendarId` entgegen; jede Methode filtert
+explizit über diese ID.
+`findAllBySourceCalendarIdOrderByStartAsc(String)` liefert die für
+`loadAllOrderedByStart()` geforderte, aufsteigende Sortierung nach `start`
+direkt über die Query-Methode, ohne dass der Adapter selbst sortieren muss.
+`saveAll(...)` ist reines Insert (kein Upsert/Merge — laut Spec kein
+vorgesehener Anwendungsfall für eine nicht-leere Warteschlange desselben
+Kalenders), und `remove(sourceUid)` ist idempotent: das Entfernen einer
+nicht (mehr) vorhandenen Zeile ist kein Fehler. Genau wie
+`JpaStateStoreAdapter` ist auch dieser Adapter **kein** auto-gescannter
+Spring-Singleton-Bean (Konstruktor braucht die pro-Kalender-
+`sourceCalendarId`) — `RelayWiringConfiguration` konstruiert eine Instanz
+pro Kalender von Hand, und `PerCalendarComponentBeanDefinitionPruner`
+entfernt die dafür überflüssige, nicht konstruierbare
+`@ArchComponentScan`-Bean-Definition, exakt wie bereits für
+`JpaStateStoreAdapter` beschrieben (siehe unten und
+[`scheduling.md`](scheduling.md#multi-kalender-verdrahtung)).
+
 ## Per-Kalender-Scoping: eine `JpaStateStoreAdapter`-Instanz pro Kalender
 
 Pro konfiguriertem Quellkalender existiert eine eigene

@@ -64,31 +64,6 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
 
     private static final Logger LOG = LogManager.getLogger(PollAndRelaySourceCalendarService.class);
 
-    /**
-     * No-op {@link PendingCreationQueue} backing the legacy constructor below: never
-     * carries anything over between cycles, so a calendar wired through that constructor
-     * captures and drains its backlog unbounded within a single cycle, identical to this
-     * class's behavior before {@code docs/features/burst-filter-initialization.md}.
-     */
-    private static final PendingCreationQueue NO_PENDING_CREATION_QUEUE = new PendingCreationQueue() {
-
-        @Override
-        public List<RelayAction.Create> loadAllOrderedByStart() {
-            return List.of();
-        }
-
-        @Override
-        public void saveAll(List<RelayAction.Create> pendingCreates) {
-        }
-
-        @Override
-        public void remove(String sourceUid) {
-        }
-    };
-
-    /** {@link BurstBudget} backing the legacy constructor below: every slot is granted. */
-    private static final BurstBudget UNLIMITED_BURST_BUDGET = () -> true;
-
     private final CalendarSource calendarSource;
     private final BlockerSink blockerSink;
     private final StateStore stateStore;
@@ -126,40 +101,6 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
         this.replyToAddress = replyToAddress;
         this.clock = clock;
         this.recurringEventHorizon = recurringEventHorizon;
-    }
-
-    /**
-     * Legacy overload predating {@code PendingCreationQueue}/{@code BurstBudget} (issue
-     * #16), delegating to the canonical constructor with an always-empty queue and an
-     * always-available budget — i.e. capture-and-drain still runs on a virgin
-     * {@code StateStore}, but unbounded within that one cycle, reproducing this class's
-     * exact pre-issue-#16 behavior. Kept only because {@code RelayWiringConfiguration}
-     * still constructs this service positionally with the pre-issue-#16 argument list;
-     * a follow-up adapter PR wires the real {@code PendingCreationQueue}/{@code
-     * BurstBudget} instances through this constructor and removes this overload.
-     */
-    public PollAndRelaySourceCalendarService(
-            CalendarSource calendarSource,
-            BlockerSink blockerSink,
-            StateStore stateStore,
-            String organizerEmail,
-            String attendeeEmail,
-            String fromAddress,
-            String replyToAddress,
-            Clock clock,
-            Period recurringEventHorizon) {
-        this(
-                calendarSource,
-                blockerSink,
-                stateStore,
-                NO_PENDING_CREATION_QUEUE,
-                UNLIMITED_BURST_BUDGET,
-                organizerEmail,
-                attendeeEmail,
-                fromAddress,
-                replyToAddress,
-                clock,
-                recurringEventHorizon);
     }
 
     /**

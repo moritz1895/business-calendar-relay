@@ -106,6 +106,8 @@ von diesem Filter nie betroffen, siehe
 | `STATE_STORE_DATA_DIR` | Verzeichnis für die eingebettete, dateibasierte H2-Datenbank hinter `StateStore` (muss neustartfest sein — in Docker als Volume mounten) | `./data` |
 | `RELAY_POLL_INTERVAL` | Intervall, in dem **jeder** konfigurierte Quellkalender abgefragt wird (Spring-`Duration`-Syntax, z. B. `5m`, `300s`) | `5m` |
 | `RELAY_RECURRING_EVENT_HORIZON` | Wie weit ein Vorkommen eines wiederkehrenden Quelltermins in der Zukunft liegen darf, um noch erstmals als Blocker angelegt zu werden — gilt **einheitlich** für jeden konfigurierten Quellkalender (ISO-8601-`Period`-Syntax, z. B. `P6M`, `P90D`). Einzeltermine sind davon nicht betroffen, siehe [`docs/domain.md`](docs/domain.md). | `P6M` |
+| `RELAY_INITIALIZATION_BURST_SIZE` | Wie viele Erstanlagen pro `RELAY_INITIALIZATION_BURST_INTERVAL` beim einmaligen Initialisieren eines Quellkalenders (Issue #16, Anti-Spam-Schutz fürs Business-Postfach) höchstens verschickt werden dürfen — **postfachweit**, über alle konfigurierten Quellkalender zusammengerechnet, keine Pro-Kalender-Einstellung. Wirkt ausschließlich auf die einmalige Erstinitialisierung, siehe [`docs/features/burst-filter-initialization.md`](docs/features/burst-filter-initialization.md). | `5` |
+| `RELAY_INITIALIZATION_BURST_INTERVAL` | Fenstergröße des Sendebudgets aus `RELAY_INITIALIZATION_BURST_SIZE` (Spring-`Duration`-Syntax, z. B. `PT1H`, `30m`) — ebenfalls postfachweit und global. | `PT1H` |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert).
