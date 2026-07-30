@@ -124,6 +124,10 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
 
     private static final int INSUFFICIENT_STORAGE = 507;
 
+    private static final int NOT_IMPLEMENTED = 501;
+
+    private static final int UNSUPPORTED_MEDIA_TYPE = 415;
+
     /**
      * Default zone applied to all-day ({@code VALUE=DATE}) occurrences, matching the
      * {@code VTIMEZONE} convention already hardcoded in {@code ImipCalendarRenderer}. The
@@ -179,13 +183,18 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
 
     /**
      * Set once, permanently, in memory (never persisted) the first time this instance
-     * observes a {@code sync-collection} response that is neither {@code 207 Multi-Status}
-     * nor a recognized invalid-sync-token response -- see {@code
-     * docs/features/delta-sync.md}'s "Fallback bei fehlender Server-Unterstützung". Once
-     * set, every subsequent {@link #readEvents()} call on this instance uses the legacy
-     * {@code calendar-query} request directly, without touching {@link
-     * #calendarReplicaStore} or attempting {@code sync-collection} again. A process
-     * restart resets this and re-attempts {@code sync-collection} once.
+     * observes a {@code sync-collection} response recognized as a definite non-support
+     * signal -- see {@link #isDefinitelyUnsupportedResponse(HttpResponse)}. Once set,
+     * every subsequent {@link #readEvents()} call on this instance uses the legacy {@code
+     * calendar-query} request directly, without touching {@link #calendarReplicaStore} or
+     * attempting {@code sync-collection} again. A process restart resets this and
+     * re-attempts {@code sync-collection} once.
+     *
+     * <p>Deliberately narrow: an unrecognized status (e.g. a transient {@code 503 Service
+     * Unavailable}) does <em>not</em> set this flag -- see {@code
+     * docs/features/delta-sync.md}'s "Fehlerfälle — Ergänzungen", which explicitly calls
+     * out that permanently downgrading on a transient error would be wrong, since the next
+     * poll can simply retry {@code sync-collection} with the same, still-valid token.
      */
     private boolean deltaSyncPermanentlyDisabled;
 
@@ -253,7 +262,7 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
     private void performInitialSync() {
         var response = executeSyncCollection("");
         if (response.statusCode() != MULTI_STATUS) {
-            throw new SyncCollectionUnsupportedException(response.statusCode(), response.body());
+            throw unexpectedSyncCollectionResponse(response);
         }
         var result = parseSyncCollectionResponse(response.body());
         resetReplica(result.newSyncToken(), result.changedResources());
@@ -270,7 +279,42 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
             performInitialSync();
             return;
         }
-        throw new SyncCollectionUnsupportedException(response.statusCode(), response.body());
+        throw unexpectedSyncCollectionResponse(response);
+    }
+
+    /**
+     * Classifies a {@code sync-collection} response that is neither {@code 207
+     * Multi-Status} nor a recognized invalid-sync-token response. Per {@code
+     * docs/features/delta-sync.md}'s "Fehlerfälle — Ergänzungen", only the specific,
+     * recognized non-support signals below permanently disable {@code sync-collection} for
+     * the remaining lifetime of this instance ({@link SyncCollectionUnsupportedException});
+     * every other, unrecognized status (e.g. a transient {@code 503 Service Unavailable})
+     * fails only the current poll cycle with a plain {@link CalDavCalendarSourceException}
+     * -- the next poll retries {@code sync-collection} with the same, still-valid token.
+     */
+    private RuntimeException unexpectedSyncCollectionResponse(HttpResponse<String> response) {
+        if (isDefinitelyUnsupportedResponse(response)) {
+            return new SyncCollectionUnsupportedException(response.statusCode(), response.body());
+        }
+        return new CalDavCalendarSourceException("Unexpected sync-collection REPORT response status "
+                + response.statusCode() + " from " + calendarCollectionUri);
+    }
+
+    /**
+     * The specific, recognized signals that a CalDAV server does not support {@code
+     * sync-collection} at all for this collection: {@code 501 Not Implemented}, {@code 415
+     * Unsupported Media Type}, or a {@code 403 Forbidden} that does <em>not</em> carry the
+     * {@code <D:valid-sync-token/>} precondition (e.g. a {@code <D:supported-report/>}
+     * precondition per RFC 3253, or no recognizable precondition body at all). Deliberately
+     * narrower than "any non-207, non-invalid-token response" -- an unrecognized status
+     * outside this set is treated as a transient failure of the current cycle only, not as
+     * evidence the server lacks {@code sync-collection} support.
+     */
+    private boolean isDefinitelyUnsupportedResponse(HttpResponse<String> response) {
+        if (response.statusCode() == NOT_IMPLEMENTED || response.statusCode() == UNSUPPORTED_MEDIA_TYPE) {
+            return true;
+        }
+        return response.statusCode() == FORBIDDEN && !containsValidSyncTokenPrecondition(response.body());
     }
 
     private HttpResponse<String> executeSyncCollection(String syncToken) {
@@ -450,9 +494,11 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
 
     /**
      * Internal control-flow signal only, never thrown out of {@link #readEvents()}: raised
-     * whenever a {@code sync-collection} response is neither {@code 207 Multi-Status} nor a
-     * recognized invalid-sync-token response, meaning the server is treated as not
-     * supporting {@code sync-collection} for this collection.
+     * only for the specific, recognized non-support signals in
+     * {@link #isDefinitelyUnsupportedResponse(HttpResponse)}, meaning the server is treated
+     * as not supporting {@code sync-collection} for this collection at all. Any other
+     * unexpected response status is a plain {@link CalDavCalendarSourceException} instead,
+     * failing only the current poll cycle without setting the permanent fallback flag.
      */
     private static final class SyncCollectionUnsupportedException extends RuntimeException {
 

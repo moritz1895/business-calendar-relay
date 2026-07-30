@@ -27,6 +27,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import ms.rohde.businesscalendarrelay.core.domain.SourceEvent;
@@ -797,8 +798,17 @@ class CalDavCalendarSourceAdapterTest {
         assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("event1-uid");
     }
 
+    // Delta-sync unsupported-signal classification, per docs/features/delta-sync.md's
+    // "Fehlerfälle — Ergänzungen": only 501 Not Implemented, 415 Unsupported Media Type,
+    // and a 403 Forbidden that does NOT carry the <D:valid-sync-token/> precondition
+    // permanently disable sync-collection for the remaining lifetime of the adapter
+    // instance. Any other unrecognized status (e.g. a transient 503) must fail only that
+    // one poll cycle and retry sync-collection with the same, still-valid token on the
+    // next cycle -- see readEvents_givenTransientServiceUnavailableResponse_... below for
+    // the regression test pinning that distinction.
+
     @Test
-    void readEvents_givenSyncCollectionUnsupported_thenFallsBackToCalendarQueryPermanentlyWithinAndAcrossCalls()
+    void readEvents_givenNotImplementedResponse_thenFallsBackToCalendarQueryPermanentlyWithinAndAcrossCalls()
             throws IOException {
         var calendarQueryResponseBody =
                 multiStatusWithCalendarData(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000"));
@@ -829,6 +839,98 @@ class CalDavCalendarSourceAdapterTest {
 
         then(replicaStore).should(times(1)).loadSyncToken();
         then(replicaStore).shouldHaveNoMoreInteractions();
+    }
+
+    @Test
+    void readEvents_givenUnsupportedMediaTypeResponse_thenFallsBackToCalendarQueryPermanently() throws IOException {
+        var calendarQueryResponseBody =
+                multiStatusWithCalendarData(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000"));
+        var uri = startServer(requestBody -> {
+            if (requestBody.contains("sync-collection")) {
+                return new StubResponse(415, "Unsupported Media Type");
+            }
+            return new StubResponse(207, calendarQueryResponseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn(null);
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("event1-uid");
+        then(replicaStore).should(times(1)).loadSyncToken();
+        then(replicaStore).shouldHaveNoMoreInteractions();
+    }
+
+    @Test
+    void readEvents_given403WithoutValidSyncTokenPrecondition_thenFallsBackToCalendarQueryPermanently()
+            throws IOException {
+        var calendarQueryResponseBody =
+                multiStatusWithCalendarData(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000"));
+        var supportedReportPreconditionBody = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                + "<d:error xmlns:d=\"DAV:\">\n"
+                + "  <d:supported-report/>\n"
+                + "</d:error>\n";
+        var uri = startServer(requestBody -> {
+            if (requestBody.contains("sync-collection")) {
+                return new StubResponse(403, supportedReportPreconditionBody);
+            }
+            return new StubResponse(207, calendarQueryResponseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn(null);
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("event1-uid");
+        then(replicaStore).should(times(1)).loadSyncToken();
+        then(replicaStore).shouldHaveNoMoreInteractions();
+    }
+
+    @Test
+    void readEvents_given403WithNoRecognizablePreconditionBody_thenFallsBackToCalendarQueryPermanently()
+            throws IOException {
+        var calendarQueryResponseBody =
+                multiStatusWithCalendarData(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000"));
+        var uri = startServer(requestBody -> {
+            if (requestBody.contains("sync-collection")) {
+                return new StubResponse(403, "Forbidden");
+            }
+            return new StubResponse(207, calendarQueryResponseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn(null);
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("event1-uid");
+        then(replicaStore).should(times(1)).loadSyncToken();
+        then(replicaStore).shouldHaveNoMoreInteractions();
+    }
+
+    @Test
+    void readEvents_givenTransientServiceUnavailableResponse_thenThrowsWithoutPermanentlyDisablingDeltaSync()
+            throws IOException {
+        var capturedBodies = new CopyOnWriteArrayList<String>();
+        var uri = startServer(requestBody -> {
+            capturedBodies.add(requestBody);
+            return new StubResponse(503, "Service Unavailable");
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn("sync-token-1");
+        var adapter = deltaSyncAdapter(uri, replicaStore);
+
+        assertThatThrownBy(adapter::readEvents).isInstanceOf(CalDavCalendarSourceException.class);
+        assertThatThrownBy(adapter::readEvents).isInstanceOf(CalDavCalendarSourceException.class);
+
+        assertThat(capturedBodies).hasSize(2);
+        assertThat(capturedBodies).allSatisfy(body -> assertThat(body).contains("sync-collection"));
+        then(replicaStore).should(times(2)).loadSyncToken();
+        then(replicaStore).should(never()).resetTo(anyString(), anyList());
+        then(replicaStore).should(never()).applyDelta(anyString(), anyList(), anyList());
     }
 
     @Test
