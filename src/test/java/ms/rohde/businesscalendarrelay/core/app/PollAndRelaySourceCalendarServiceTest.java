@@ -17,6 +17,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import ms.rohde.businesscalendarrelay.core.domain.RelayAction;
 import ms.rohde.businesscalendarrelay.core.domain.RelayDiffPlanner;
 import ms.rohde.businesscalendarrelay.core.domain.RelayState;
 import ms.rohde.businesscalendarrelay.core.domain.SourceEvent;
@@ -24,13 +25,16 @@ import ms.rohde.businesscalendarrelay.ports.outbound.BlockerMail;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerMailMethod;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSinkException;
+import ms.rohde.businesscalendarrelay.ports.outbound.BurstBudget;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
+import ms.rohde.businesscalendarrelay.ports.outbound.PendingCreationQueue;
 import ms.rohde.businesscalendarrelay.ports.outbound.StateStore;
 import ms.rohde.businesscalendarrelay.ports.outbound.StateStoreException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -63,6 +67,15 @@ class PollAndRelaySourceCalendarServiceTest {
     @Mock
     private StateStore stateStore;
 
+    @Mock
+    private PendingCreationQueue pendingCreationQueue;
+
+    @Mock
+    private BurstBudget burstBudget;
+
+    @Captor
+    private ArgumentCaptor<List<RelayAction.Create>> pendingQueueCaptor;
+
     private PollAndRelaySourceCalendarService service;
 
     @BeforeEach
@@ -71,6 +84,8 @@ class PollAndRelaySourceCalendarServiceTest {
                 calendarSource,
                 blockerSink,
                 stateStore,
+                pendingCreationQueue,
+                burstBudget,
                 ORGANIZER,
                 ATTENDEE,
                 FROM,
@@ -79,11 +94,17 @@ class PollAndRelaySourceCalendarServiceTest {
                 RECURRING_EVENT_HORIZON);
     }
 
+    private static RelayAction.Create createAction(String sourceUid, ZonedDateTime start) {
+        return new RelayAction.Create(
+                sourceUid, "blocker-" + sourceUid, 0, start, start.plusHours(1), false, true, false);
+    }
+
     @Test
     void pollAndRelay_givenNewSourceEvent_thenCreatesBlockerAndSavesState() {
         given(calendarSource.readEvents())
                 .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
 
         var result = service.pollAndRelay();
 
@@ -248,6 +269,7 @@ class PollAndRelaySourceCalendarServiceTest {
                         new SourceEvent("source-fail", START, END, false, true, false, false),
                         new SourceEvent("source-ok", START, END, false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
 
         var failure = new BlockerSinkException("smtp down");
         var callCount = new AtomicInteger();
@@ -278,6 +300,7 @@ class PollAndRelaySourceCalendarServiceTest {
                         new SourceEvent("source-fail", START, END, false, true, false, false),
                         new SourceEvent("source-ok", START, END, false, true, false, false)));
         given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
 
         var failure = new StateStoreException("db unavailable");
         var callCount = new AtomicInteger();
@@ -297,6 +320,128 @@ class PollAndRelaySourceCalendarServiceTest {
         assertThat(result.failed().getFirst().sourceUid()).isEqualTo("source-fail");
         assertThat(result.failed().getFirst().cause()).isEqualTo(failure);
 
+        then(blockerSink).should(times(2)).send(any());
+        then(stateStore).should(times(2)).save(any());
+    }
+
+    // --- Burst-filter initialization (issue #16): capture-and-drain of a fresh calendar's backlog ---
+
+    @Test
+    void pollAndRelay_givenFirstEverCycleWithMultipleEligibleEvents_thenCapturesQueueAndDrainsUpToBudget() {
+        var laterStart = START.plusDays(1);
+        given(calendarSource.readEvents())
+                .willReturn(List.of(
+                        new SourceEvent("source-later", laterStart, laterStart.plusHours(1), false, true, false, false),
+                        new SourceEvent("source-earlier", START, END, false, true, false, false)));
+        given(stateStore.loadAll()).willReturn(List.of());
+        given(pendingCreationQueue.loadAllOrderedByStart()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true, false);
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).containsExactly("source-earlier");
+        assertThat(result.failed()).isEmpty();
+
+        then(pendingCreationQueue).should().saveAll(pendingQueueCaptor.capture());
+        assertThat(pendingQueueCaptor.getValue())
+                .extracting(RelayAction.Create::sourceUid)
+                .containsExactly("source-earlier", "source-later");
+
+        then(blockerSink).should(times(1)).send(any());
+        then(stateStore).should(times(1)).save(any());
+        then(pendingCreationQueue).should().remove("source-earlier");
+        then(pendingCreationQueue).should(never()).remove("source-later");
+    }
+
+    @Test
+    void pollAndRelay_givenBudgetExhaustedMidDrain_thenStopsImmediatelyLeavingRemainingItemsUntouched() {
+        var item1 = createAction("source-1", START);
+        var item2 = createAction("source-2", START.plusDays(1));
+        var item3 = createAction("source-3", START.plusDays(2));
+        given(pendingCreationQueue.loadAllOrderedByStart()).willReturn(List.of(item1, item2, item3));
+        given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true, false);
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).containsExactly("source-1");
+        then(blockerSink).should(times(1)).send(any());
+        then(pendingCreationQueue).should().remove("source-1");
+        then(pendingCreationQueue).should(never()).remove("source-2");
+        then(pendingCreationQueue).should(never()).remove("source-3");
+    }
+
+    @Test
+    void pollAndRelay_givenNonEmptyPendingQueue_thenDoesNotInvokeCalendarSourceReadEvents() {
+        given(pendingCreationQueue.loadAllOrderedByStart()).willReturn(List.of(createAction("source-1", START)));
+        given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
+
+        service.pollAndRelay();
+
+        then(calendarSource).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void pollAndRelay_givenQueueItemAlreadyHasRelayState_thenRemovesWithoutResendingAndProcessesRestNormally() {
+        var alreadySentItem = createAction("source-1", START);
+        var pendingItem = createAction("source-2", START.plusDays(1));
+        given(pendingCreationQueue.loadAllOrderedByStart()).willReturn(List.of(alreadySentItem, pendingItem));
+        given(stateStore.loadAll())
+                .willReturn(List.of(
+                        new RelayState("source-1", "blocker-source-1", 0, START, END, true, false, true, false)));
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).containsExactly("source-2");
+        then(blockerSink).should(times(1)).send(any());
+        then(stateStore).should(times(1)).save(any());
+        then(pendingCreationQueue).should().remove("source-1");
+        then(pendingCreationQueue).should().remove("source-2");
+    }
+
+    @Test
+    void pollAndRelay_givenQueueItemNowPastCreationCutoff_thenRemovesWithoutSendingAndWithoutConsumingBudget() {
+        var staleStart = ZonedDateTime.of(2026, 7, 1, 10, 0, 0, 0, BERLIN);
+        var staleItem = createAction("source-stale", staleStart);
+        var freshItem = createAction("source-fresh", START);
+        given(pendingCreationQueue.loadAllOrderedByStart()).willReturn(List.of(staleItem, freshItem));
+        given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
+
+        var result = service.pollAndRelay();
+
+        assertThat(result.created()).containsExactly("source-fresh");
+        assertThat(result.failed()).isEmpty();
+        then(blockerSink).should(times(1)).send(any());
+        then(burstBudget).should(times(1)).tryAcquireSendSlot();
+        then(pendingCreationQueue).should().remove("source-stale");
+        then(pendingCreationQueue).should().remove("source-fresh");
+    }
+
+    @Test
+    void pollAndRelay_givenLegacyConstructorWithoutPendingCreationQueueOrBurstBudget_thenCreatesAllEligibleEventsUnbounded() {
+        var legacyService = new PollAndRelaySourceCalendarService(
+                calendarSource,
+                blockerSink,
+                stateStore,
+                ORGANIZER,
+                ATTENDEE,
+                FROM,
+                REPLY_TO,
+                CLOCK,
+                RECURRING_EVENT_HORIZON);
+        var laterStart = START.plusDays(1);
+        given(calendarSource.readEvents())
+                .willReturn(List.of(
+                        new SourceEvent("source-1", START, END, false, true, false, false),
+                        new SourceEvent("source-2", laterStart, laterStart.plusHours(1), false, true, false, false)));
+        given(stateStore.loadAll()).willReturn(List.of());
+
+        var result = legacyService.pollAndRelay();
+
+        assertThat(result.created()).containsExactlyInAnyOrder("source-1", "source-2");
         then(blockerSink).should(times(2)).send(any());
         then(stateStore).should(times(2)).save(any());
     }

@@ -121,7 +121,7 @@ public final class RelayDiffPlanner {
      * beyond the past-start cutoff.
      */
     private boolean isEligibleForCreation(SourceEvent event, ZonedDateTime now, Period recurringEventHorizon) {
-        if (event.start().isBefore(now)) {
+        if (isPastCreationCutoff(event.start(), now)) {
             return false;
         }
         if (event.allDay()) {
@@ -134,6 +134,19 @@ public final class RelayDiffPlanner {
             return false;
         }
         return !event.recurring() || !event.start().isAfter(now.plus(recurringEventHorizon));
+    }
+
+    /**
+     * Standalone, publicly reusable extraction of the past-cutoff condition from
+     * {@link #isEligibleForCreation} — {@code true} once {@code start} has slipped into
+     * the past relative to {@code now}. Used both internally by
+     * {@link #isEligibleForCreation} and, independently, to re-check a queued
+     * {@link RelayAction.Create} for staleness while draining a {@code PendingCreationQueue}
+     * (see {@code docs/features/burst-filter-initialization.md}), without re-running the
+     * other four creation-gate conditions.
+     */
+    public boolean isPastCreationCutoff(ZonedDateTime start, ZonedDateTime now) {
+        return start.isBefore(now);
     }
 
     /**

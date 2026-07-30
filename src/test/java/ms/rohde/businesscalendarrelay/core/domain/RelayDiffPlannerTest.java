@@ -165,6 +165,27 @@ class RelayDiffPlannerTest {
                 .noneMatch(action -> action.sourceUid().equals("source-unchanged"));
     }
 
+    // --- isPastCreationCutoff: standalone, publicly reusable extraction of gate condition 1 ---
+
+    @Test
+    void isPastCreationCutoff_givenStartBeforeNow_thenReturnsTrue() {
+        var pastStart = NOW.minusDays(1);
+
+        assertThat(planner.isPastCreationCutoff(pastStart, NOW)).isTrue();
+    }
+
+    @Test
+    void isPastCreationCutoff_givenStartExactlyAtNow_thenReturnsFalse() {
+        assertThat(planner.isPastCreationCutoff(NOW, NOW)).isFalse();
+    }
+
+    @Test
+    void isPastCreationCutoff_givenStartAfterNow_thenReturnsFalse() {
+        var futureStart = NOW.plusDays(1);
+
+        assertThat(planner.isPastCreationCutoff(futureStart, NOW)).isFalse();
+    }
+
     // --- Creation-gate: each of the 5 isEligibleForCreation conditions, individually rejecting a would-be-create ---
 
     @Test
