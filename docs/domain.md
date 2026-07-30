@@ -149,6 +149,12 @@ Zustand gehalten, da der Erstellungs-Filter, den sie speisen, bei jedem
 Poll-Zyklus gegen den aktuellen Zeitpunkt neu ausgewertet werden muss. Die
 vollständigen Entscheidungsregeln stehen unten unter "Domänenregeln".
 
+Daneben stellt `RelayDiffPlanner` mit `isPastCreationCutoff` den
+Vergangenheits-Cutoff aus dem Erstellungs-Filter als eigenständige,
+öffentliche Prüfung bereit, unabhängig von `plan(...)` aufrufbar und dort
+auch tatsächlich extern wiederverwendet — siehe "Initialisierungs-Rückstand
+und Sendebudget" unten.
+
 ### `ImipCalendarRenderer`
 
 Zustandsloser Dienst, der `BlockerEvent`-Instanzen in rohen
@@ -165,6 +171,91 @@ unterstützten iMIP-Methoden (`REQUEST` für Erstellung/Aktualisierung,
 - Bei einer Absage bleibt `STATUS:CONFIRMED` auf dem `VEVENT` erhalten; die
   Absage-Semantik liegt vollständig in `METHOD:CANCEL` auf
   `VCALENDAR`-Ebene.
+
+## Initialisierungs-Rückstand und Sendebudget
+
+Zwei ergänzende fachliche Begriffe, die ausschließlich während der
+einmaligen Erstinitialisierung eines Quellkalenders eine Rolle spielen und
+nichts an den drei zentralen Begriffen oben oder an den Domänenregeln unten
+ändern — sie entscheiden nicht **ob**, sondern **wann** eine bereits
+erstellungsberechtigte Erstanlage tatsächlich verschickt wird.
+
+### Initialisierungs-Rückstand (Pending Creation Queue)
+
+Die vollständige Liste an Erstanlagen, die `RelayDiffPlanner.plan(...)` beim
+allerersten Poll-Zyklus eines Kalenders (leerer `StateStore`) in einem
+Rutsch berechnet. Statt sofort komplett versendet zu werden, wird diese
+Liste einmalig eingesammelt ("Capture") und danach über mehrere Poll-Zyklen
+hinweg scheibchenweise abgearbeitet ("Draining") — begrenzt durch das
+Sendebudget (siehe unten). Sobald ein Kalender seinen Rückstand vollständig
+abgearbeitet hat, kippt er dauerhaft in den gewöhnlichen Poll-and-Diff-
+Betrieb, ohne dass dafür irgendwo ein eigenes "initialisiert"-Flag gesetzt
+werden muss: Der initialisierte Zustand ist vollständig aus zwei bereits
+vorhandenen Tatsachen ableitbar — ein leerer Rückstand **und** ein leerer
+`StateStore` bedeuten "noch nie initialisiert, Capture nötig"; sobald
+irgendeine Erstanlage einmal erfolgreich war, ist der `StateStore` nie
+wieder leer (abgesagte `RelayState`-Einträge werden nie gelöscht, siehe
+unten), sodass ein einmal begonnenes Draining diese Bedingung nie wieder
+fälschlich erfüllen kann.
+
+Ein Eintrag im Rückstand ist strukturell nichts anderes als ein bereits
+vorhandenes `RelayAction.Create`: Es gibt bewusst keinen eigenen
+Domänentyp dafür — ein Eintrag braucht exakt die Felder, die
+`RelayAction.Create` bereits trägt (`sourceUid`, `blockerUid`, `sequence`
+immer `0`, `start`, `end`, `allDay`, `busy`, `cancelled`), und ein zweiter,
+paralleler Typ ohne fachlichen Vorteil würde nur eine zusätzliche
+Umwandlung erzeugen.
+
+Zu jedem Zeitpunkt existiert höchstens ein aktiver Initialisierungs-
+Rückstand pro Kalender, niemals zwei sich überlappende —
+`RelayDiffPlanner.plan(...)` wird für einen noch nicht vollständig
+initialisierten Kalender kein zweites Mal aufgerufen, solange sein
+Rückstand noch Einträge enthält. Ein Quelltermin, der bereits einen
+`RelayState`-Eintrag besitzt — aktiv oder bereits abgesagt —, wird niemals
+in den Rückstand aufgenommen und niemals durch ihn beeinflusst; der
+Rückstand trägt ausschließlich Erstanlagen, nie Aktualisierungen oder
+Absagen.
+
+Der Rückstand wird ausschließlich aufsteigend nach `start` abgearbeitet —
+über Zyklus- und Neustartgrenzen hinweg stabil. Das minimiert die Zahl der
+Einträge, die während eines mehrtägigen Drainings noch veralten können
+(siehe "Vergangenheits-Cutoff für Rückstands-Einträge" unten).
+
+### Sendebudget (Burst Budget)
+
+Ein postfachweites, über alle konfigurierten Quellkalender gemeinsam
+genutztes Budget, das begrenzt, wie viele Erstanlagen aus einem
+Initialisierungs-Rückstand pro Zeitfenster tatsächlich verschickt werden
+dürfen (Default: 5 pro Stunde, konfigurierbar). Das Budget gilt
+ausschließlich für das Draining eines Initialisierungs-Rückstands —
+Aktualisierungen, Absagen und jede Erstanlage nach abgeschlossener
+Initialisierung eines Kalenders durchlaufen weiterhin den ungedrosselten
+Pfad von heute.
+
+Ein verbrauchter Sendeslot wird bei einem fehlgeschlagenen Versandversuch
+nicht zurückerstattet: Die eigentliche Last, vor der das Postfach geschützt
+werden soll, ist der Versandversuch selbst (der Verbindungsaufbau zum
+Mailserver), nicht dessen Erfolg. Ein fehlgeschlagener Rückstands-Eintrag
+bleibt ohnehin im Rückstand stehen und wird beim nächsten Zyklus mit einem
+neu erworbenen Slot erneut versucht — exakt dieselbe Retry-Semantik, die
+für gewöhnliche Erstanlagen bereits gilt.
+
+### Vergangenheits-Cutoff für Rückstands-Einträge
+
+Ein Rückstands-Eintrag, dessen `start` inzwischen in die Vergangenheit
+gerückt ist, seit er beim Capture erfasst wurde, wird beim Draining
+verworfen — kein Versand, kein `RelayState`. Bewusst wird keine der
+übrigen vier Bedingungen des Erstellungs-Filters (ganztägig, beschäftigt,
+storniert, Wiederholungs-Zeitfenster; siehe "Erstellungs-Filter" unten) für
+einen Rückstands-Eintrag erneut geprüft — diese Werte wurden bereits beim
+Capture aus dem damaligen Quellkalender-Stand übernommen und fließen
+unverändert in den gespeicherten Eintrag ein. Ein während der Drain-Phase
+am Quellkalender stornierter oder auf "nicht beschäftigt" umgestellter
+Termin wird also, sofern sein `start` noch in der Zukunft liegt, trotzdem
+noch als Erstanlage verschickt — ein eng begrenztes, akzeptiertes Risiko
+(nur während der einmaligen Erstinitialisierung eines Kalenders, nicht im
+Dauerbetrieb), das sich von selbst auflöst, sobald der gewöhnliche Zyklus
+nach abgeschlossenem Draining wieder frische Quelltermine liest.
 
 ## Domänenregeln (Invarianten)
 
