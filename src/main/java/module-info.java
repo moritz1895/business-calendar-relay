@@ -14,6 +14,7 @@ open module ms.rohde.businesscalendarrelay {
     requires jakarta.persistence;
     requires jakarta.validation;
     requires spring.data.jpa;
+    requires spring.tx;
     requires ms.rohde.hexagonalarch.annotations;
     requires ms.rohde.hexagonalarch.spring;
     requires java.net.http;

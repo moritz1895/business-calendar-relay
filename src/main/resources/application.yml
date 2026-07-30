@@ -56,3 +56,7 @@ relay:
   #     attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
   #     from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
   #     reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
+  #     # delta-sync-enabled: true   -- Default; auf false setzen, um für diesen
+  #     # einen Kalender dauerhaft auf die vollständige calendar-query-Anfrage
+  #     # zurückzufallen (z. B. bei einem Server, der sync-collection fehlerhaft
+  #     # implementiert, aber nicht sauber als nicht unterstützt erkennbar ist).

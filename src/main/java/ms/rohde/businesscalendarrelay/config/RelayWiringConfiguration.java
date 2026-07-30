@@ -6,6 +6,9 @@ import java.time.Clock;
 import java.time.Period;
 import java.util.List;
 import ms.rohde.businesscalendarrelay.adapters.outbound.caldav.CalDavCalendarSourceAdapter;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarReplicaResourceJpaRepository;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarSyncTokenJpaRepository;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaCalendarReplicaStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaPendingCreationQueueAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaStateStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.PendingCreationJpaRepository;
@@ -31,9 +34,10 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  *
  * <p>Every use-case instance shares one {@link HttpClient}, one {@link Clock}, one
  * {@link BlockerSink} bean (the SMTP adapter, which has no per-calendar state), one
- * {@link RelayStateJpaRepository}, one {@link PendingCreationJpaRepository}, and one
- * {@link BurstBudget} bean (the mailbox-wide send budget, shared across every calendar --
- * see {@code docs/features/burst-filter-initialization.md}, issue #16). See
+ * {@link RelayStateJpaRepository}, one {@link PendingCreationJpaRepository}, one
+ * {@link CalendarReplicaResourceJpaRepository}, one {@link CalendarSyncTokenJpaRepository},
+ * and one {@link BurstBudget} bean (the mailbox-wide send budget, shared across every
+ * calendar -- see {@code docs/features/burst-filter-initialization.md}, issue #16). See
  * {@link PerCalendarComponentBeanDefinitionPruner} for why {@code @ArchComponentScan}
  * does not also try to register these per-calendar classes as eager Spring singletons.
  */
@@ -76,6 +80,8 @@ public class RelayWiringConfiguration {
             BlockerSink blockerSink,
             RelayStateJpaRepository relayStateJpaRepository,
             PendingCreationJpaRepository pendingCreationJpaRepository,
+            CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
+            CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
             BurstBudget relayBurstBudget) {
         return buildUseCases(
                 relayProperties,
@@ -84,6 +90,8 @@ public class RelayWiringConfiguration {
                 blockerSink,
                 relayStateJpaRepository,
                 pendingCreationJpaRepository,
+                calendarReplicaResourceJpaRepository,
+                calendarSyncTokenJpaRepository,
                 relayBurstBudget);
     }
 
@@ -98,6 +106,8 @@ public class RelayWiringConfiguration {
             BlockerSink blockerSink,
             RelayStateJpaRepository relayStateJpaRepository,
             PendingCreationJpaRepository pendingCreationJpaRepository,
+            CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
+            CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
             BurstBudget burstBudget) {
         var recurringEventHorizon = relayProperties.recurringEventHorizon();
         return relayProperties.calendars().stream()
@@ -108,6 +118,8 @@ public class RelayWiringConfiguration {
                         blockerSink,
                         relayStateJpaRepository,
                         pendingCreationJpaRepository,
+                        calendarReplicaResourceJpaRepository,
+                        calendarSyncTokenJpaRepository,
                         burstBudget,
                         recurringEventHorizon))
                 .toList();
@@ -120,15 +132,21 @@ public class RelayWiringConfiguration {
             BlockerSink blockerSink,
             RelayStateJpaRepository relayStateJpaRepository,
             PendingCreationJpaRepository pendingCreationJpaRepository,
+            CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
+            CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
             BurstBudget burstBudget,
             Period recurringEventHorizon) {
+        var calendarReplicaStore = new JpaCalendarReplicaStoreAdapter(
+                calendarReplicaResourceJpaRepository, calendarSyncTokenJpaRepository, calendar.id());
         var calendarSource = new CalDavCalendarSourceAdapter(
                 httpClient,
                 URI.create(calendar.caldavUrl()),
                 calendar.caldavUsername(),
                 calendar.caldavPassword(),
                 clock,
-                recurringEventHorizon);
+                recurringEventHorizon,
+                calendarReplicaStore,
+                calendar.deltaSyncEnabled());
         var stateStore = new JpaStateStoreAdapter(relayStateJpaRepository, calendar.id());
         var pendingCreationQueue = new JpaPendingCreationQueueAdapter(pendingCreationJpaRepository, calendar.id());
 

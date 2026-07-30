@@ -2,6 +2,15 @@ package ms.rohde.businesscalendarrelay.adapters.outbound.caldav;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -17,8 +26,13 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import ms.rohde.businesscalendarrelay.core.domain.SourceEvent;
+import ms.rohde.businesscalendarrelay.ports.outbound.CachedCalendarResource;
+import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStore;
+import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStoreException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -101,13 +115,77 @@ class CalDavCalendarSourceAdapterTest {
         return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + COLLECTION_PATH);
     }
 
+    /**
+     * A {@link CalendarReplicaStore} mock that fails the test the instant any method on it
+     * is invoked -- used by every legacy/{@code calendar-query}-path test (delta sync
+     * disabled) to prove {@code CalDavCalendarSourceAdapter} never touches it, per {@code
+     * docs/features/delta-sync.md}: "Ist deltaSyncEnabled == false, ... calendarReplicaStore
+     * wird in diesem Fall nie berührt."
+     */
+    private static CalendarReplicaStore neverTouchedReplicaStore() {
+        return mock(CalendarReplicaStore.class, invocation -> {
+            throw new AssertionError(
+                    "CalendarReplicaStore must not be touched when delta sync is disabled, but "
+                            + invocation.getMethod().getName() + " was called");
+        });
+    }
+
     private CalDavCalendarSourceAdapter adapter(URI calendarCollectionUri) {
         return adapter(calendarCollectionUri, DEFAULT_CLOCK, DEFAULT_HORIZON);
     }
 
     private CalDavCalendarSourceAdapter adapter(URI calendarCollectionUri, Clock clock, Period recurringEventHorizon) {
         return new CalDavCalendarSourceAdapter(
-                HttpClient.newHttpClient(), calendarCollectionUri, USERNAME, PASSWORD, clock, recurringEventHorizon);
+                HttpClient.newHttpClient(),
+                calendarCollectionUri,
+                USERNAME,
+                PASSWORD,
+                clock,
+                recurringEventHorizon,
+                neverTouchedReplicaStore(),
+                false);
+    }
+
+    private CalDavCalendarSourceAdapter deltaSyncAdapter(URI calendarCollectionUri, CalendarReplicaStore replicaStore) {
+        return deltaSyncAdapter(calendarCollectionUri, replicaStore, DEFAULT_CLOCK, DEFAULT_HORIZON);
+    }
+
+    private CalDavCalendarSourceAdapter deltaSyncAdapter(
+            URI calendarCollectionUri, CalendarReplicaStore replicaStore, Clock clock, Period recurringEventHorizon) {
+        return new CalDavCalendarSourceAdapter(
+                HttpClient.newHttpClient(),
+                calendarCollectionUri,
+                USERNAME,
+                PASSWORD,
+                clock,
+                recurringEventHorizon,
+                replicaStore,
+                true);
+    }
+
+    private record StubResponse(int statusCode, String body) {}
+
+    /**
+     * Starts a local HTTP server whose response depends on the incoming REPORT request
+     * body, so a test can simulate the CalDAV server behaving differently across
+     * successive requests within a single {@code readEvents()} call (e.g. an invalid
+     * sync-token forcing a second, empty-token request) or across successive
+     * {@code readEvents()} calls (e.g. permanent fallback).
+     */
+    private URI startServer(Function<String, StubResponse> responder) throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(COLLECTION_PATH, exchange -> {
+            var requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            var stub = responder.apply(requestBody);
+            var payload = stub.body().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/xml; charset=utf-8");
+            exchange.sendResponseHeaders(stub.statusCode(), payload.length);
+            try (OutputStream responseStream = exchange.getResponseBody()) {
+                responseStream.write(payload);
+            }
+        });
+        server.start();
+        return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + COLLECTION_PATH);
     }
 
     private static String icsCalendar(String... veventBlocks) {
@@ -517,5 +595,290 @@ class CalDavCalendarSourceAdapterTest {
 
         assertThat(events).hasSize(3);
         assertThat(events).allSatisfy(event -> assertThat(event.cancelled()).isTrue());
+    }
+
+    // --- Delta sync (sync-collection, RFC 6578) ---
+
+    private record SyncChangedEntry(String href, String etag, String rawCalendarData) {}
+
+    private static String syncCollectionMultiStatus(
+            String syncToken, List<SyncChangedEntry> changed, List<String> removedHrefs) {
+        var sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
+                .append("<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">\n");
+        for (var entry : changed) {
+            sb.append("  <d:response>\n")
+                    .append("    <d:href>")
+                    .append(entry.href())
+                    .append("</d:href>\n")
+                    .append("    <d:propstat>\n")
+                    .append("      <d:prop>\n")
+                    .append("        <d:getetag>")
+                    .append(entry.etag())
+                    .append("</d:getetag>\n")
+                    .append("        <cal:calendar-data>")
+                    .append(entry.rawCalendarData())
+                    .append("</cal:calendar-data>\n")
+                    .append("      </d:prop>\n")
+                    .append("      <d:status>HTTP/1.1 200 OK</d:status>\n")
+                    .append("    </d:propstat>\n")
+                    .append("  </d:response>\n");
+        }
+        for (var href : removedHrefs) {
+            sb.append("  <d:response>\n")
+                    .append("    <d:href>")
+                    .append(href)
+                    .append("</d:href>\n")
+                    .append("    <d:status>HTTP/1.1 404 Not Found</d:status>\n")
+                    .append("  </d:response>\n");
+        }
+        sb.append("  <d:sync-token>").append(syncToken).append("</d:sync-token>\n");
+        sb.append("</d:multistatus>\n");
+        return sb.toString();
+    }
+
+    private static String invalidSyncTokenErrorBody() {
+        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                + "<d:error xmlns:d=\"DAV:\">\n"
+                + "  <d:valid-sync-token/>\n"
+                + "</d:error>\n";
+    }
+
+    /**
+     * Per the XML 1.0 end-of-line handling rule, any XML processor normalizes {@code
+     * \r\n} (and lone {@code \r}) to a single {@code \n} in parsed character data. A
+     * {@code CachedCalendarResource} built directly from {@link #icsWithSingleVEvent}
+     * (which uses {@code \r\n}) must go through this same normalization before being
+     * compared against a {@code rawCalendarData} value that actually travelled through the
+     * multistatus XML response, or the comparison spuriously fails on line-ending style
+     * alone despite identical content.
+     */
+    private static String xmlNormalized(String text) {
+        return text.replace("\r\n", "\n");
+    }
+
+    @Test
+    void readEvents_givenDeltaSyncEnabledAndNoStoredToken_thenIssuesSyncCollectionWithEmptyTokenAndResetsReplica()
+            throws IOException {
+        var capture = new AtomicReference<String>();
+        var responseBody = syncCollectionMultiStatus(
+                "sync-token-1",
+                List.of(new SyncChangedEntry("/cal/event1.ics", "\"etag-1\"", icsWithSingleVEvent(
+                        "event1-uid", "20260201T100000", "20260201T110000"))),
+                List.of());
+        var uri = startServer(requestBody -> {
+            capture.set(requestBody);
+            return new StubResponse(207, responseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn(null);
+        var storedResource = new CachedCalendarResource(
+                "/cal/event1.ics",
+                "\"etag-1\"",
+                xmlNormalized(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000")));
+        given(replicaStore.loadAllResources()).willReturn(List.of(storedResource));
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        assertThat(capture.get()).contains("sync-collection").contains("<D:sync-token></D:sync-token>");
+        then(replicaStore).should().resetTo(eq("sync-token-1"), eq(List.of(storedResource)));
+        then(replicaStore).should(never()).applyDelta(anyString(), anyList(), anyList());
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "event1-uid",
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenDeltaSyncEnabledAndStoredToken_thenIssuesSyncCollectionWithStoredTokenAndAppliesDelta()
+            throws IOException {
+        var capture = new AtomicReference<String>();
+        var changedResource = new SyncChangedEntry(
+                "/cal/event2.ics", "\"etag-2\"", icsWithSingleVEvent("event2-uid", "20260301T090000", "20260301T093000"));
+        var responseBody =
+                syncCollectionMultiStatus("sync-token-2", List.of(changedResource), List.of("/cal/removed.ics"));
+        var uri = startServer(requestBody -> {
+            capture.set(requestBody);
+            return new StubResponse(207, responseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn("sync-token-1");
+        var cachedEvent2 = new CachedCalendarResource(
+                "/cal/event2.ics",
+                "\"etag-2\"",
+                xmlNormalized(icsWithSingleVEvent("event2-uid", "20260301T090000", "20260301T093000")));
+        given(replicaStore.loadAllResources()).willReturn(List.of(cachedEvent2));
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        assertThat(capture.get()).contains("sync-collection").contains("<D:sync-token>sync-token-1</D:sync-token>");
+        then(replicaStore)
+                .should()
+                .applyDelta(
+                        eq("sync-token-2"),
+                        eq(List.of(new CachedCalendarResource(
+                                changedResource.href(),
+                                changedResource.etag(),
+                                xmlNormalized(changedResource.rawCalendarData())))),
+                        eq(List.of("/cal/removed.ics")));
+        then(replicaStore).should(never()).resetTo(anyString(), anyList());
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "event2-uid",
+                        ZonedDateTime.of(2026, 3, 1, 9, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 3, 1, 9, 30, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenInvalidSyncTokenResponseWithPrecondition_thenPerformsForcedFullResync() throws IOException {
+        var initialSyncResponseBody = syncCollectionMultiStatus(
+                "sync-token-fresh",
+                List.of(new SyncChangedEntry("/cal/event1.ics", "\"etag-1\"", icsWithSingleVEvent(
+                        "event1-uid", "20260201T100000", "20260201T110000"))),
+                List.of());
+        var uri = startServer(requestBody -> {
+            if (requestBody.contains("<D:sync-token>stale-token</D:sync-token>")) {
+                return new StubResponse(403, invalidSyncTokenErrorBody());
+            }
+            return new StubResponse(207, initialSyncResponseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn("stale-token");
+        var freshResource = new CachedCalendarResource(
+                "/cal/event1.ics",
+                "\"etag-1\"",
+                xmlNormalized(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000")));
+        given(replicaStore.loadAllResources()).willReturn(List.of(freshResource));
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        then(replicaStore).should().resetTo(eq("sync-token-fresh"), eq(List.of(freshResource)));
+        then(replicaStore).should(never()).applyDelta(anyString(), anyList(), anyList());
+        assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("event1-uid");
+    }
+
+    @Test
+    void readEvents_givenInsufficientStorageResponse_thenPerformsForcedFullResyncSameAsInvalidToken() throws IOException {
+        var initialSyncResponseBody = syncCollectionMultiStatus(
+                "sync-token-fresh",
+                List.of(new SyncChangedEntry("/cal/event1.ics", "\"etag-1\"", icsWithSingleVEvent(
+                        "event1-uid", "20260201T100000", "20260201T110000"))),
+                List.of());
+        var uri = startServer(requestBody -> {
+            if (requestBody.contains("<D:sync-token>stale-token</D:sync-token>")) {
+                return new StubResponse(507, "insufficient storage");
+            }
+            return new StubResponse(207, initialSyncResponseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn("stale-token");
+        var freshResource = new CachedCalendarResource(
+                "/cal/event1.ics",
+                "\"etag-1\"",
+                xmlNormalized(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000")));
+        given(replicaStore.loadAllResources()).willReturn(List.of(freshResource));
+
+        var events = deltaSyncAdapter(uri, replicaStore).readEvents();
+
+        then(replicaStore).should().resetTo(eq("sync-token-fresh"), eq(List.of(freshResource)));
+        assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("event1-uid");
+    }
+
+    @Test
+    void readEvents_givenSyncCollectionUnsupported_thenFallsBackToCalendarQueryPermanentlyWithinAndAcrossCalls()
+            throws IOException {
+        var calendarQueryResponseBody =
+                multiStatusWithCalendarData(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000"));
+        var uri = startServer(requestBody -> {
+            if (requestBody.contains("sync-collection")) {
+                return new StubResponse(501, "Not Implemented");
+            }
+            return new StubResponse(207, calendarQueryResponseBody);
+        });
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn(null);
+        var adapter = deltaSyncAdapter(uri, replicaStore);
+
+        var firstCallEvents = adapter.readEvents();
+        var secondCallEvents = adapter.readEvents();
+
+        var expectedEvent = new SourceEvent(
+                "event1-uid",
+                ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                false,
+                true,
+                false,
+                false);
+        assertThat(firstCallEvents).containsExactly(expectedEvent);
+        assertThat(secondCallEvents).containsExactly(expectedEvent);
+
+        then(replicaStore).should(times(1)).loadSyncToken();
+        then(replicaStore).shouldHaveNoMoreInteractions();
+    }
+
+    @Test
+    void readEvents_givenReplicaStoreLoadSyncTokenThrows_thenThrowsCalDavCalendarSourceException() throws IOException {
+        var uri = startServer(requestBody -> new StubResponse(207, cleanSingleEventMultiStatus()));
+        var replicaStore = mock(CalendarReplicaStore.class);
+        willThrow(new RuntimeException("db unavailable")).given(replicaStore).loadSyncToken();
+
+        assertThatThrownBy(() -> deltaSyncAdapter(uri, replicaStore).readEvents())
+                .isInstanceOf(CalDavCalendarSourceException.class);
+    }
+
+    @Test
+    void readEvents_givenReplicaStoreApplyDeltaThrows_thenThrowsCalDavCalendarSourceExceptionWrappingCause()
+            throws IOException {
+        var responseBody = syncCollectionMultiStatus(
+                "sync-token-2",
+                List.of(new SyncChangedEntry("/cal/event1.ics", "\"etag-1\"", icsWithSingleVEvent(
+                        "event1-uid", "20260201T100000", "20260201T110000"))),
+                List.of());
+        var uri = startServer(requestBody -> new StubResponse(207, responseBody));
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn("sync-token-1");
+        var cause = new CalendarReplicaStoreException("persistence failed");
+        willThrow(cause).given(replicaStore).applyDelta(anyString(), anyList(), anyList());
+
+        assertThatThrownBy(() -> deltaSyncAdapter(uri, replicaStore).readEvents())
+                .isInstanceOf(CalDavCalendarSourceException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void readEvents_givenDeltaSyncEnabledAndRecurringSeriesInReplica_thenAppliesUnchangedExpansionPipeline()
+            throws IOException {
+        var syncCollectionResponseBody = syncCollectionMultiStatus("sync-token-2", List.of(), List.of());
+        var uri = startServer(requestBody -> new StubResponse(207, syncCollectionResponseBody));
+
+        var replicaStore = mock(CalendarReplicaStore.class);
+        given(replicaStore.loadSyncToken()).willReturn("sync-token-1");
+        var seriesResource =
+                new CachedCalendarResource("/cal/series.ics", "\"etag\"", icsCalendar(weeklyMasterVEvent(false)));
+        given(replicaStore.loadAllResources()).willReturn(List.of(seriesResource));
+
+        var events = deltaSyncAdapter(uri, replicaStore, seriesClock(), seriesHorizon()).readEvents();
+
+        assertThat(events).hasSize(3);
+        assertThat(events).allSatisfy(event -> {
+            assertThat(event.recurring()).isTrue();
+            assertThat(event.sourceUid()).startsWith(SERIES_UID + "#");
+        });
     }
 }

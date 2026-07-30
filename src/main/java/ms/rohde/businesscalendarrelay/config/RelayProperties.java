@@ -78,6 +78,17 @@ public record RelayProperties(
      * @param fromAddress {@code From}/envelope-from of the iMIP mail
      * @param replyToAddress {@code Reply-To} of the iMIP mail, typically the organizer's
      *     human address
+     * @param deltaSyncEnabled whether {@code CalDavCalendarSourceAdapter} may use RFC 6578
+     *     {@code sync-collection} delta sync for this calendar (see
+     *     {@code docs/features/delta-sync.md}). A per-calendar, not global, field --
+     *     whether {@code sync-collection} works is a server capability that legitimately
+     *     differs between providers, unlike {@link #recurringEventHorizon()} or
+     *     {@link #initialization()}, which are fachlich policies applied uniformly.
+     *     Defaults to {@code true}; a CalDAV server that does not support
+     *     {@code sync-collection} is already detected automatically and falls back to the
+     *     legacy {@code calendar-query} request on its own -- this flag is a manual
+     *     override for the rarer case where the automatic detection itself
+     *     misbehaves against a specific server.
      */
     public record CalendarConfig(
             @NotBlank String id,
@@ -87,6 +98,7 @@ public record RelayProperties(
             @NotBlank String organizerEmail,
             @NotBlank String attendeeEmail,
             @NotBlank String fromAddress,
-            @NotBlank String replyToAddress) {
+            @NotBlank String replyToAddress,
+            @DefaultValue("true") boolean deltaSyncEnabled) {
     }
 }
