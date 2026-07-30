@@ -224,17 +224,26 @@ eine Absage und eine spätere Wiederauferstehung hinweg — genau deshalb
 werden abgesagte Einträge nicht gelöscht (siehe unten). `RelayState` ist
 die einzige Quelle der Wahrheit für den zuletzt gesendeten Wert.
 
-### `blockerUid` wird zufällig generiert, unabhängig von `sourceUid`
+### `blockerUid` wird deterministisch aus `sourceUid` abgeleitet
 
-Bei einer Erstellung wird eine neue `blockerUid` zufällig erzeugt (UUID),
-unabhängig von Wert und Format der `sourceUid`. Eine deterministische
-Ableitung (z. B. per Hash aus `sourceUid`) wurde bewusst nicht gewählt, da
-sie den `UID`-Namensraum bzw. das Format des privaten Quellkalenders in die
-Identitäten des Business-Kalenders durchsickern ließe — ohne fachlichen
-Nutzen, da `RelayState` die Zuordnung ohnehin bereits explizit und
-dauerhaft hält. Einmal vergeben, wird eine `blockerUid` für die gesamte
-Lebensdauer ihres `RelayState`-Eintrags nie neu generiert, abgesagt oder
-nicht.
+Bei einer Erstellung wird die neue `blockerUid` deterministisch aus der
+`sourceUid` abgeleitet (`UUID.nameUUIDFromBytes` auf den UTF-8-Bytes der
+`sourceUid`), nicht zufällig erzeugt. Grund: `BlockerSink.send` verschickt
+die iMIP-`REQUEST`-Mail, **bevor** `StateStore.save` die
+`sourceUid`→`blockerUid`-Zuordnung persistiert; schlägt `save` danach fehl
+(DB-Fehler, Prozessabbruch, volle Platte), hat der Quelltermin beim
+nächsten Poll weiterhin keinen `RelayState` und wird erneut als Erstellung
+diffed. Mit einer zufälligen `blockerUid` hätte dieser Retry eine völlig
+neue, unabhängige `blockerUid` erhalten — Outlook hätte eine zweite,
+unabhängige Einladung angelegt statt den Resend als dieselbe zu erkennen.
+Die deterministische Ableitung macht einen solchen Retry für denselben
+Quelltermin sicher: Er erzeugt garantiert dieselbe `blockerUid` bei
+`sequence = 0`, exakt wie beim ursprünglichen (fehlgeschlagenen) Versuch.
+Die Ableitung ist bewusst nur innerhalb eines Kalenders eindeutig (kein
+Einbezug einer Kalender-Identität), da `RelayDiffPlanner` ausschließlich
+pro bereits kalender-gescopter Use-Case-Instanz aufgerufen wird. Einmal
+vergeben, wird eine `blockerUid` für die gesamte Lebensdauer ihres
+`RelayState`-Eintrags nie neu generiert, abgesagt oder nicht.
 
 ### Abgesagte `RelayState`-Einträge werden aufbewahrt, nicht gelöscht
 
