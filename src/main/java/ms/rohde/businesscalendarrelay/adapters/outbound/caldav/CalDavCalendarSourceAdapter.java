@@ -655,7 +655,11 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
             try {
                 uid = requireUid(vevent);
             } catch (CalDavCalendarSourceException e) {
-                LOG.warn("Skipping unparseable VEVENT from {}: {}", calendarCollectionUri, e.getMessage());
+                LOG.warn(
+                        "Skipping unparseable VEVENT ({}) from {}: {}",
+                        describeForLogging(vevent),
+                        calendarCollectionUri,
+                        e.getMessage());
                 continue;
             }
             byUid.computeIfAbsent(uid, key -> new ArrayList<>()).add(vevent);
@@ -667,8 +671,9 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                 result.addAll(expandSeries(entry.getKey(), entry.getValue(), now));
             } catch (CalDavCalendarSourceException e) {
                 LOG.warn(
-                        "Skipping unparseable VEVENT UID={} from {}: {}",
+                        "Skipping unparseable VEVENT UID={} ({}) from {}: {}",
                         entry.getKey(),
+                        describeForLogging(entry.getValue().getFirst()),
                         calendarCollectionUri,
                         e.getMessage());
             }
@@ -681,6 +686,25 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                 .map(Uid::getValue)
                 .orElseThrow(() -> new CalDavCalendarSourceException(
                         "VEVENT from " + calendarCollectionUri + " is missing UID"));
+    }
+
+    /**
+     * Best-effort, log-only identification for a {@code VEVENT} that failed the creation
+     * pipeline (missing {@code UID}/{@code DTSTART}/{@code DTEND}) -- purely a diagnostic
+     * aid so the calendar owner can find and fix/delete the offending entry, never fed into
+     * {@link SourceEvent} itself, which deliberately carries no title (see {@code
+     * docs/domain.md}). Both {@code SUMMARY} and {@code DTSTAMP} are read directly and
+     * independently of whichever property actually caused the failure, so this still
+     * produces useful output even when, e.g., {@code DTSTART} itself is the missing one.
+     */
+    private String describeForLogging(VEvent vevent) {
+        var summary = vevent.getProperty(Property.SUMMARY)
+                .map(Property::getValue)
+                .orElse("(kein SUMMARY)");
+        var dtstamp = vevent.getProperty(Property.DTSTAMP)
+                .map(Property::getValue)
+                .orElse("(kein DTSTAMP)");
+        return "SUMMARY=\"" + summary + "\", DTSTAMP=" + dtstamp;
     }
 
     private List<SourceEvent> expandSeries(String uid, List<VEvent> components, ZonedDateTime now) {
