@@ -245,8 +245,9 @@ für gewöhnliche Erstanlagen bereits gilt.
 Ein Rückstands-Eintrag, dessen `start` inzwischen in die Vergangenheit
 gerückt ist, seit er beim Capture erfasst wurde, wird beim Draining
 verworfen — kein Versand, kein `RelayState`. Bewusst wird keine der
-übrigen vier Bedingungen des Erstellungs-Filters (ganztägig, beschäftigt,
-storniert, Wiederholungs-Zeitfenster; siehe "Erstellungs-Filter" unten) für
+übrigen fünf Bedingungen des Erstellungs-Filters (ganztägig, beschäftigt,
+storniert, Wochenende, Wiederholungs-Zeitfenster; siehe "Erstellungs-Filter"
+unten) für
 einen Rückstands-Eintrag erneut geprüft — diese Werte wurden bereits beim
 Capture aus dem damaligen Quellkalender-Stand übernommen und fließen
 unverändert in den gespeicherten Eintrag ein. Ein während der Drain-Phase
@@ -401,7 +402,11 @@ Poll-Zyklus gegen das aktuelle `now`):
 2. **Kein ganztägiger Termin:** `allDay` ist `false`.
 3. **Als "beschäftigt" markiert:** `busy` ist `true`.
 4. **Nicht storniert markiert:** `cancelled` ist `false`.
-5. **Wiederholungs-Zeitfenster, nur für wiederkehrende Termine:** Ist
+5. **Kein Wochenendtermin:** `start` fällt (in seiner eigenen Zeitzone,
+   nicht UTC) weder auf einen Samstag noch einen Sonntag. Gilt für
+   Einzeltermine wie für einzelne Vorkommen einer wiederkehrenden Serie
+   gleichermaßen — pro Vorkommen ausgewertet, nicht auf Serienebene.
+6. **Wiederholungs-Zeitfenster, nur für wiederkehrende Termine:** Ist
    `recurring` `true`, darf `start` nicht später liegen als
    `now.plus(recurringEventHorizon)` (konfigurierbar, siehe README).
    Einzeltermine haben keine solche obere Zeitschranke — für sie gilt nur

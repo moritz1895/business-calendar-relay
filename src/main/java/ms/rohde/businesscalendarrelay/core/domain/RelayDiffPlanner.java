@@ -1,6 +1,7 @@
 package ms.rohde.businesscalendarrelay.core.domain;
 
 import java.nio.charset.StandardCharsets;
+import java.time.DayOfWeek;
 import java.time.Period;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -115,10 +116,18 @@ public final class RelayDiffPlanner {
     /**
      * A source event is eligible to have a brand-new blocker created for it only when
      * all of the following hold: its {@code start} is not in the past, it is not an
-     * all-day event, it is marked busy, it is not marked cancelled, and — only if it
-     * originates from a recurring series — its {@code start} does not lie beyond
+     * all-day event, it is marked busy, it is not marked cancelled, its {@code start}
+     * does not fall on a Saturday or Sunday, and — only if it originates from a
+     * recurring series — its {@code start} does not lie beyond
      * {@code now.plus(recurringEventHorizon)}. Non-recurring events have no upper bound
      * beyond the past-start cutoff.
+     *
+     * <p>The weekend exclusion, like every other condition here, applies only to this
+     * creation gate — an already-active blocker whose recurring series later produces a
+     * weekend occurrence is updated/cancelled normally, never retroactively removed for
+     * falling on a weekend (see the class Javadoc's "creation-eligibility gate" note).
+     * {@code start}'s own zone (not UTC) decides the day of week, matching how every
+     * other date-derived decision in this class already works.
      */
     private boolean isEligibleForCreation(SourceEvent event, ZonedDateTime now, Period recurringEventHorizon) {
         if (isPastCreationCutoff(event.start(), now)) {
@@ -131,6 +140,10 @@ public final class RelayDiffPlanner {
             return false;
         }
         if (event.cancelled()) {
+            return false;
+        }
+        var startDayOfWeek = event.start().getDayOfWeek();
+        if (startDayOfWeek == DayOfWeek.SATURDAY || startDayOfWeek == DayOfWeek.SUNDAY) {
             return false;
         }
         return !event.recurring() || !event.start().isAfter(now.plus(recurringEventHorizon));

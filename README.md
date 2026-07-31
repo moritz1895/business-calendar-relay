@@ -28,8 +28,9 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 - Fehlertoleranter Poll-Zyklus: ein fehlgeschlagener Versand für einen
   einzelnen Termin blockiert nicht die übrigen Termine desselben Zyklus.
 - Erstellungs-Filterung neuer Blocker (Vergangenheits-Cutoff, Ausschluss
-  ganztägiger/nicht-beschäftigter/stornierter Quelltermine, konfigurierbares
-  Wiederholungs-Zeitfenster für wiederkehrende Termine), damit ein erster
+  ganztägiger/nicht-beschäftigter/stornierter/auf Samstag oder Sonntag
+  fallender Quelltermine, konfigurierbares Wiederholungs-Zeitfenster für
+  wiederkehrende Termine), damit ein erster
   Lauf gegen einen Kalender mit mehrjähriger Historie nicht Hunderte
   historischer Termine als iMIP-Flut verschickt. Wirkt ausschließlich auf
   die Neuanlage, nie auf bereits vorhandene Blocker.
@@ -92,8 +93,9 @@ Drei Features sind auf dieser Basis inzwischen produktiv umgesetzt:
   (Issue #3): Ein Quelltermin ohne vorherigen Relay-Zustand wird nur dann
   als neuer Blocker angelegt, wenn sein Start in der Zukunft liegt, er kein
   ganztägiger und kein als "nicht beschäftigt" markierter Termin ist, er
-  nicht storniert markiert ist und — bei wiederkehrenden Terminen —
-  innerhalb eines konfigurierbaren, nach vorne gleitenden Zeitfensters
+  nicht storniert markiert ist, sein Start nicht auf einen Samstag oder
+  Sonntag fällt, und — bei wiederkehrenden Terminen — innerhalb eines
+  konfigurierbaren, nach vorne gleitenden Zeitfensters
   (`relay.recurring-event-horizon`) liegt. Bereits vorhandene Blocker werden
   von diesem Filter nie betroffen, siehe
   [`docs/features/event-filtering.md`](docs/features/event-filtering.md) und
