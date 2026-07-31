@@ -22,7 +22,7 @@ services:
       # SMTP-Passwort. Kein Default -- erforderlich, siehe .env.example.
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       # Verzeichnis der eingebetteten, dateibasierten H2-Datenbank hinter StateStore.
-      # Fest auf /app/data gesetzt (passend zum "relay-state-data"-Volume unten) --
+      # Fest auf /app/data gesetzt (passend zum "./data"-Bind-Mount unten) --
       # anders als die übrigen Variablen hier bewusst nicht aus .env befüllt, da der
       # Pfad *innerhalb* des Containers liegt, nicht auf dem Host. Anwendungsseitiger
       # Default (außerhalb von Docker, z. B. bei "mvn spring-boot:run"): ./data
@@ -72,13 +72,17 @@ services:
       # nicht aus .env befüllt.
       SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/relay-calendars.yml
     volumes:
-      - relay-state-data:/app/data
+      # Bind mount, not a named volume: the embedded H2 database (relay-state.mv.db and
+      # friends) needs to be a plain, directly visible file on the host -- e.g. to scp/rsync
+      # StateStore/CalendarReplicaStore/PendingCreationQueue state between a real deployment
+      # and a local test environment, avoiding "everything looks new" duplicate-mail
+      # incidents when testing against a fresh, empty database. A named volume hides this
+      # inside Docker-internal storage instead. Create ./data once, owned by uid:gid 10001
+      # (see Dockerfile) before the very first start: mkdir -p data && sudo chown 10001:10001 data
+      - ./data:/app/data
       # Real source-calendar list -- copy config/relay-calendars.yml.example to
       # config/relay-calendars.yml (git-ignored) and fill in real calendar entries
       # before starting. Must exist as a file (not a directory) before `docker compose
       # up`, otherwise Docker creates an empty directory in its place.
       - ./config/relay-calendars.yml:/app/config/relay-calendars.yml:ro
     restart: unless-stopped
-
-volumes:
-  relay-state-data:

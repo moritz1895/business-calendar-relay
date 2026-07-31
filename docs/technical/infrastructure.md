@@ -44,21 +44,27 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       STATE_STORE_DATA_DIR: /app/data
     volumes:
-      - relay-state-data:/app/data
+      - ./data:/app/data
     restart: unless-stopped
-
-volumes:
-  relay-state-data:
 ```
 
-Es gibt genau einen Service (`app`) und ein Named Volume
-(`relay-state-data`), gemountet auf `/app/data` — dasselbe Verzeichnis, das
-`STATE_STORE_DATA_DIR` im Container auf `/app/data` setzt und damit die H2-
-Datenbankdatei dort ablegt (siehe `database.md` für die genaue
-URL-Ableitung). Ohne dieses Volume ginge der gesamte Relay-Zustand
-(Quell-`UID` → Blocker-`UID`/`SEQUENCE`-Mapping) bei jedem Container-Neustart
-verloren, und jedes bereits gespiegelte Event würde beim nächsten Poll
-fälschlich als neu behandelt.
+Es gibt genau einen Service (`app`) und einen **Bind-Mount** (`./data` auf
+dem Host, nicht ein Docker-named-Volume), gemountet auf `/app/data` —
+dasselbe Verzeichnis, das `STATE_STORE_DATA_DIR` im Container auf
+`/app/data` setzt und damit die H2-Datenbankdatei dort ablegt (siehe
+`database.md` für die genaue URL-Ableitung). Bewusst ein Bind-Mount statt
+eines named Volumes: die H2-Datei liegt dadurch als ganz normale,
+sichtbare Datei unter `./data/relay-state.mv.db` auf dem Host, statt in
+Dockers interner Volume-Verwaltung versteckt zu sein — lässt sich damit
+direkt per `scp`/`rsync` zwischen Umgebungen kopieren (siehe `README.md`,
+Abschnitt „Datenbank-Datei / Zustand zwischen Umgebungen synchronisieren“).
+Der Container läuft als fester, nicht-root User `uid:gid 10001` (siehe
+`Dockerfile`); `./data` muss vor dem ersten Start diesem Owner gehören
+(`chown 10001:10001 data`), sonst schlägt der Schreibzugriff fehl. Ohne
+dieses Mount ginge der gesamte Relay-Zustand (Quell-`UID` →
+Blocker-`UID`/`SEQUENCE`-Mapping) bei jedem Container-Neustart verloren,
+und jedes bereits gespiegelte Event würde beim nächsten Poll fälschlich
+als neu behandelt.
 
 `relay.calendars` selbst ist **nicht** über Compose-Umgebungsvariablen
 abgebildet — die Kalenderliste kommt aus einer YAML-Konfiguration (siehe
@@ -130,8 +136,8 @@ steht im `README.md`. Operativ relevant beim Deployment:
   `smtp.md`), sonst landen iMIP-Mails im Spam oder werden vom Empfänger
   abgelehnt.
 - `STATE_STORE_DATA_DIR` — muss auf ein Verzeichnis zeigen, das den
-  Container-Lifecycle übersteht (im Compose-Setup: das Named Volume
-  `relay-state-data`). Ein versehentlich nicht gemountetes
+  Container-Lifecycle übersteht (im Compose-Setup: der Bind-Mount `./data`
+  auf dem Host). Ein versehentlich nicht gemountetes
   `STATE_STORE_DATA_DIR` führt beim nächsten Neustart zu vollständigem
   Zustandsverlust, ohne dass die Anwendung das erkennt oder meldet — sie
   startet einfach mit einer leeren `relay_state`-Tabelle neu.

@@ -329,6 +329,11 @@ Vor dem ersten Start:
    kopieren und die tatsächliche(n) Kalenderliste(n) eintragen (Datei muss
    existieren, bevor `docker compose up` läuft — sonst legt Docker an ihrer
    Stelle ein leeres Verzeichnis an). Beide Dateien sind `.gitignore`t.
+3. `data/`-Verzeichnis für die H2-Datenbank anlegen und dem Container-User
+   gehören lassen (feste UID/GID `10001`, siehe `Dockerfile`):
+   ```bash
+   mkdir -p data && sudo chown 10001:10001 data
+   ```
 
 ```bash
 docker compose up --build
@@ -373,3 +378,18 @@ Umgebungsvariablen, Volumes und Healthcheck. Erneutes Ausführen von
 Tarball; `docker-compose.yml`s explizites `image: business-calendar-relay:latest`
 sorgt dafür, dass Build und Export denselben, vorhersagbaren Image-Namen
 verwenden.
+
+### Datenbank-Datei / Zustand zwischen Umgebungen synchronisieren
+
+Die eingebettete H2-Datenbank (`StateStore`, `CalendarReplicaStore`,
+`PendingCreationQueue` — siehe `docs/technical/database.md`) liegt als
+Bind-Mount unter `./data/` (nicht als Docker-named-Volume), also als ganz
+normale Datei(en) auf dem Host — standardmäßig `data/relay-state.mv.db`
+(H2s Dateiendung, siehe `spring.datasource.url` in `application.yml`).
+Damit lässt sich der Zustand direkt zwischen einer echten Produktivumgebung
+und einer lokalen Testumgebung kopieren (`scp`/`rsync`), z. B. um beim
+lokalen Testen mit demselben, bereits bekannten Terminbestand zu starten,
+statt bei jedem Testlauf gegen eine leere Datenbank zu pollen — das ist
+genau der Fall, der sonst zu "sieht alles neu aus"-Mail-Dopplungen führt.
+Container vor dem Kopieren stoppen (`docker compose stop`), damit H2 keine
+offenen Schreiboperationen hat.
