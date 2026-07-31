@@ -339,8 +339,37 @@ mountet `config/relay-calendars.yml` read-only nach
 `/app/config/relay-calendars.yml`, per `SPRING_CONFIG_ADDITIONAL_LOCATION`
 eingebunden (siehe "Quellkalender (`relay.calendars`)" oben).
 
-Hinweis: Der Build zieht `ms.rohde:hexagonal-arch-*` als `1.0.0-SNAPSHOT` aus
-dem lokalen Maven-Repository. Für einen containerisierten Build außerhalb
-dieser Maschine muss dieses Artefakt aus einem erreichbaren Repository
-(privates Repo oder gemountetes `.m2`) verfügbar gemacht werden — das ist
-aktuell nicht gelöst.
+Der Build löst `ms.rohde:hexagonal-arch-*` (`1.0.0-SNAPSHOT`) über das
+interne Maven-Repository auf (`settings.xml`, siehe
+`docs/technical/infrastructure.md`), nicht aus dem lokalen `.m2`-Cache —
+ein containerisierter Build funktioniert daher auch auf einer frischen
+Maschine, solange diese das interne Repository erreichen kann.
+
+### Deployment auf einem anderen Docker-Host (ohne Build-Toolchain dort)
+
+Für ein Zielsystem, das gar keinen Zugriff auf das interne Maven-Repository
+oder die Build-Toolchain haben soll (z. B. ein Produktiv-Host), wird das
+Image hier gebaut und als Tarball exportiert:
+
+```bash
+./build-and-export-image.sh
+```
+
+Erzeugt `business-calendar-relay-image.tar` (immer ein sauberer
+`--no-cache`-Build, kein Risiko einer veralteten Schicht im Export). Auf
+das Zielsystem müssen kopiert werden: die Tarball-Datei,
+`docker-compose.deploy.yml`, sowie die befüllten `.env` und
+`config/relay-calendars.yml` (siehe oben). Dort dann:
+
+```bash
+docker load -i business-calendar-relay-image.tar
+docker compose -f docker-compose.deploy.yml up -d
+```
+
+`docker-compose.deploy.yml` unterscheidet sich von `docker-compose.yml`
+nur durch das Fehlen der `build:`-Sektion — funktional identische
+Umgebungsvariablen, Volumes und Healthcheck. Erneutes Ausführen von
+`build-and-export-image.sh` nach Code-Änderungen erzeugt einen aktuellen
+Tarball; `docker-compose.yml`s explizites `image: business-calendar-relay:latest`
+sorgt dafür, dass Build und Export denselben, vorhersagbaren Image-Namen
+verwenden.
