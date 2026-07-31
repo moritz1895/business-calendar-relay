@@ -132,9 +132,10 @@ greift.
      - **Erstellung** für einen Quelltermin ohne vorherigen Zustand, der
        zusätzlich den Erstellungs-Filter besteht (`isEligibleForCreation`
        — Start nicht in der Vergangenheit, nicht ganztägig, als
-       "beschäftigt" markiert, nicht storniert markiert und, nur bei
-       wiederkehrenden Terminen, Start innerhalb des konfigurierten
-       Wiederholungs-Zeitfensters). Besteht ein Quelltermin ohne
+       "beschäftigt" markiert, nicht storniert markiert, Start fällt nicht
+       auf Samstag oder Sonntag, und, nur bei wiederkehrenden Terminen,
+       Start innerhalb des konfigurierten Wiederholungs-Zeitfensters).
+       Besteht ein Quelltermin ohne
        vorherigen Zustand diesen Filter nicht, wird er für diesen Zyklus
        einfach übersprungen — kein Rendern, kein Versand, kein
        `RelayState`-Eintrag. Er wird beim nächsten Poll erneut

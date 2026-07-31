@@ -236,6 +236,41 @@ class RelayDiffPlannerTest {
     }
 
     @Test
+    void plan_givenNewEventStartingOnSaturday_thenNoActionIsEmitted() {
+        var saturdayStart = ZonedDateTime.of(2026, 7, 25, 10, 0, 0, 0, BERLIN);
+        var currentEvents =
+                List.of(new SourceEvent("source-1", saturdayStart, saturdayStart.plusHours(1), false, true, false, false));
+
+        var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
+
+        assertThat(actions).isEmpty();
+    }
+
+    @Test
+    void plan_givenNewEventStartingOnSunday_thenNoActionIsEmitted() {
+        var sundayStart = ZonedDateTime.of(2026, 7, 26, 10, 0, 0, 0, BERLIN);
+        var currentEvents =
+                List.of(new SourceEvent("source-1", sundayStart, sundayStart.plusHours(1), false, true, false, false));
+
+        var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
+
+        assertThat(actions).isEmpty();
+    }
+
+    @Test
+    void plan_givenActiveStateWhoseSourceEventStartMovedToSaturday_thenStillReturnsUpdateAction() {
+        var saturdayStart = ZonedDateTime.of(2026, 7, 25, 10, 0, 0, 0, BERLIN);
+        var saturdayEnd = saturdayStart.plusHours(1);
+        var currentEvents = List.of(new SourceEvent("source-1", saturdayStart, saturdayEnd, false, true, false, false));
+        var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
+
+        var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
+
+        assertThat(actions).hasSize(1);
+        assertThat(actions.getFirst()).isInstanceOf(RelayAction.Update.class);
+    }
+
+    @Test
     void plan_givenNewRecurringEventBeyondHorizon_thenNoActionIsEmitted() {
         var farStart = NOW.plus(HORIZON).plusDays(1);
         var currentEvents = List.of(new SourceEvent("source-1", farStart, farStart.plusHours(1), false, true, true, false));
