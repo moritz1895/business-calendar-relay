@@ -35,7 +35,15 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
 
     private static final Logger LOG = LogManager.getLogger(SmtpBlockerSinkAdapter.class);
 
-    private static final String SUBJECT = "Kalenderaktualisierung";
+    /**
+     * Must match {@code ImipCalendarRenderer}'s {@code SUMMARY:Privater Blocker} literal
+     * exactly. Outlook's calendar grid displays this mail's {@code Subject} header as the
+     * appointment's title, not the ICS {@code SUMMARY} property -- observed directly
+     * against a real mailbox: with a mismatched {@code Subject} ("Kalenderaktualisierung"),
+     * every created appointment showed that mismatched text as its title instead of the
+     * intended titleless placeholder.
+     */
+    private static final String SUBJECT = "Privater Blocker";
 
     private static final String ICS_FILE_NAME = "event.ics";
 
