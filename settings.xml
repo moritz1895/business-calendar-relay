@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+    <!-- Maven blocks plain http:// repositories by default since 3.8.1 (the built-in
+         maven-default-http-blocker mirror). ms.rohde:hexagonal-arch-* is published only to
+         the internal-snapshots repository declared in pom.xml, served over plain HTTP on the
+         local network; this unblocks exactly that one repository. Anonymous read access is
+         sufficient for resolving dependencies (verified against the running server), so no
+         credentials belong in this file; it's safe to commit and is used by both local
+         builds and the Dockerfile builder stage. Deploying to this repository (as opposed to
+         just resolving from it) still requires the internal-releases/internal-snapshots
+         server credentials from the developer's own ~/.m2/settings.xml. -->
+    <mirrors>
+        <mirror>
+            <id>internal-snapshots-unblock</id>
+            <mirrorOf>internal-snapshots</mirrorOf>
+            <url>http://maven.home/snapshots</url>
+            <blocked>false</blocked>
+        </mirror>
+    </mirrors>
+</settings>
