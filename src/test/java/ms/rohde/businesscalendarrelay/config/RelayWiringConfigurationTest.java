@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * {@link RelayWiringConfiguration#buildUseCases} is deliberately a plain static method
@@ -46,6 +47,9 @@ class RelayWiringConfigurationTest {
     @Mock
     private BurstBudget burstBudget;
 
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Clock clock = Clock.systemUTC();
 
@@ -70,7 +74,8 @@ class RelayWiringConfigurationTest {
                 pendingCreationJpaRepository,
                 calendarReplicaResourceJpaRepository,
                 calendarSyncTokenJpaRepository,
-                burstBudget);
+                burstBudget,
+                transactionManager);
 
         assertThat(useCases).hasSize(3);
         assertThat(useCases).allSatisfy(
@@ -91,7 +96,8 @@ class RelayWiringConfigurationTest {
                 pendingCreationJpaRepository,
                 calendarReplicaResourceJpaRepository,
                 calendarSyncTokenJpaRepository,
-                burstBudget);
+                burstBudget,
+                transactionManager);
 
         assertThat(useCases).isEmpty();
     }

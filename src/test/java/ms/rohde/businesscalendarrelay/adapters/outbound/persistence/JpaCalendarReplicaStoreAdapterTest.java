@@ -17,6 +17,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Verifies {@link JpaCalendarReplicaStoreAdapter} against a real (embedded, in-memory for
@@ -49,11 +50,14 @@ class JpaCalendarReplicaStoreAdapterTest {
     @Autowired
     private TestEntityManager entityManager;
 
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
     private JpaCalendarReplicaStoreAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        adapter = new JpaCalendarReplicaStoreAdapter(resourceRepository, tokenRepository, CALENDAR_ID);
+        adapter = new JpaCalendarReplicaStoreAdapter(resourceRepository, tokenRepository, CALENDAR_ID, transactionManager);
     }
 
     private static CachedCalendarResource resource(String href, String etag, String rawCalendarData) {
@@ -101,7 +105,7 @@ class JpaCalendarReplicaStoreAdapterTest {
     @Test
     void resetTo_givenExistingReplicaForCalendar_thenReplacesEntireSetAndDoesNotTouchOtherCalendars() {
         adapter.resetTo("sync-token-1", List.of(resource("/cal/stale.ics", "etag-stale", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")));
-        var otherAdapter = new JpaCalendarReplicaStoreAdapter(resourceRepository, tokenRepository, OTHER_CALENDAR_ID);
+        var otherAdapter = new JpaCalendarReplicaStoreAdapter(resourceRepository, tokenRepository, OTHER_CALENDAR_ID, transactionManager);
         otherAdapter.resetTo(
                 "other-token", List.of(resource("/cal/untouched.ics", "etag-untouched", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")));
 
@@ -172,7 +176,7 @@ class JpaCalendarReplicaStoreAdapterTest {
     @Test
     void loadSyncToken_givenRepositoryThrows_thenPropagatesUnwrapped() {
         var mockTokenRepository = mock(CalendarSyncTokenJpaRepository.class);
-        var mockAdapter = new JpaCalendarReplicaStoreAdapter(resourceRepository, mockTokenRepository, CALENDAR_ID);
+        var mockAdapter = new JpaCalendarReplicaStoreAdapter(resourceRepository, mockTokenRepository, CALENDAR_ID, transactionManager);
         var cause = new RuntimeException("db unavailable");
         willThrow(cause).given(mockTokenRepository).findBySourceCalendarId(CALENDAR_ID);
 
@@ -182,7 +186,7 @@ class JpaCalendarReplicaStoreAdapterTest {
     @Test
     void loadAllResources_givenRepositoryThrows_thenPropagatesUnwrapped() {
         var mockResourceRepository = mock(CalendarReplicaResourceJpaRepository.class);
-        var mockAdapter = new JpaCalendarReplicaStoreAdapter(mockResourceRepository, tokenRepository, CALENDAR_ID);
+        var mockAdapter = new JpaCalendarReplicaStoreAdapter(mockResourceRepository, tokenRepository, CALENDAR_ID, transactionManager);
         var cause = new RuntimeException("db unavailable");
         willThrow(cause).given(mockResourceRepository).findAllBySourceCalendarId(CALENDAR_ID);
 
@@ -192,7 +196,7 @@ class JpaCalendarReplicaStoreAdapterTest {
     @Test
     void applyDelta_givenRepositoryThrows_thenThrowsCalendarReplicaStoreExceptionWrappingCause() {
         var mockResourceRepository = mock(CalendarReplicaResourceJpaRepository.class);
-        var mockAdapter = new JpaCalendarReplicaStoreAdapter(mockResourceRepository, tokenRepository, CALENDAR_ID);
+        var mockAdapter = new JpaCalendarReplicaStoreAdapter(mockResourceRepository, tokenRepository, CALENDAR_ID, transactionManager);
         var cause = new RuntimeException("db unavailable");
         willThrow(cause).given(mockResourceRepository).saveAll(any());
 
@@ -207,7 +211,7 @@ class JpaCalendarReplicaStoreAdapterTest {
     @Test
     void resetTo_givenRepositoryThrows_thenThrowsCalendarReplicaStoreExceptionWrappingCause() {
         var mockResourceRepository = mock(CalendarReplicaResourceJpaRepository.class);
-        var mockAdapter = new JpaCalendarReplicaStoreAdapter(mockResourceRepository, tokenRepository, CALENDAR_ID);
+        var mockAdapter = new JpaCalendarReplicaStoreAdapter(mockResourceRepository, tokenRepository, CALENDAR_ID, transactionManager);
         var cause = new RuntimeException("db unavailable");
         willThrow(cause).given(mockResourceRepository).deleteBySourceCalendarId(CALENDAR_ID);
 

@@ -6,7 +6,8 @@ import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStore;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStoreException;
 import ms.rohde.hexagonalarch.annotations.InfrastructureServiceAdapter;
 import org.jspecify.annotations.Nullable;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * {@link CalendarReplicaStore} backed by the same embedded, file-mode H2 database as
@@ -24,6 +25,19 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Deliberately not wired as an auto-scanned, no-arg Spring singleton bean, for the same
  * reason as {@link JpaStateStoreAdapter} and {@link JpaPendingCreationQueueAdapter} -- see
  * those classes' Javadoc for the full explanation.
+ *
+ * <p>{@link #applyDelta}/{@link #resetTo} each need <em>multiple</em> repository calls
+ * (upsert, delete, sync-token save) to commit as one atomic unit -- {@code @Transactional}
+ * cannot provide that here the way it does for a single-call repository method, since this
+ * adapter is constructed via plain {@code new} (see {@code RelayWiringConfiguration}),
+ * never through Spring, so there is no proxy around it for {@code @Transactional} on its
+ * own methods to attach to (verified directly: an earlier version of this exact bug in the
+ * sibling {@code JpaPendingCreationQueueAdapter} kept failing with "No EntityManager with
+ * actual transaction available for current thread" until fixed). A directly injected
+ * {@link PlatformTransactionManager} (itself a genuine Spring-managed singleton, safe to
+ * hand to a non-managed object) wrapped in a {@link TransactionTemplate} sidesteps the
+ * proxy requirement entirely by opening the transaction programmatically instead of
+ * declaratively.
  */
 @InfrastructureServiceAdapter
 public final class JpaCalendarReplicaStoreAdapter implements CalendarReplicaStore {
@@ -31,14 +45,17 @@ public final class JpaCalendarReplicaStoreAdapter implements CalendarReplicaStor
     private final CalendarReplicaResourceJpaRepository resourceRepository;
     private final CalendarSyncTokenJpaRepository tokenRepository;
     private final String sourceCalendarId;
+    private final TransactionTemplate transactionTemplate;
 
     public JpaCalendarReplicaStoreAdapter(
             CalendarReplicaResourceJpaRepository resourceRepository,
             CalendarSyncTokenJpaRepository tokenRepository,
-            String sourceCalendarId) {
+            String sourceCalendarId,
+            PlatformTransactionManager transactionManager) {
         this.resourceRepository = resourceRepository;
         this.tokenRepository = tokenRepository;
         this.sourceCalendarId = sourceCalendarId;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Override
@@ -57,14 +74,15 @@ public final class JpaCalendarReplicaStoreAdapter implements CalendarReplicaStor
     }
 
     @Override
-    @Transactional
     public void applyDelta(String newSyncToken, List<CachedCalendarResource> upserted, List<String> removedHrefs) {
         try {
-            upsertResources(upserted);
-            if (!removedHrefs.isEmpty()) {
-                resourceRepository.deleteBySourceCalendarIdAndHrefIn(sourceCalendarId, removedHrefs);
-            }
-            saveSyncToken(newSyncToken);
+            transactionTemplate.executeWithoutResult(status -> {
+                upsertResources(upserted);
+                if (!removedHrefs.isEmpty()) {
+                    resourceRepository.deleteBySourceCalendarIdAndHrefIn(sourceCalendarId, removedHrefs);
+                }
+                saveSyncToken(newSyncToken);
+            });
         } catch (RuntimeException e) {
             throw new CalendarReplicaStoreException(
                     "Failed to apply calendar replica delta for sourceCalendarId=" + sourceCalendarId, e);
@@ -72,12 +90,13 @@ public final class JpaCalendarReplicaStoreAdapter implements CalendarReplicaStor
     }
 
     @Override
-    @Transactional
     public void resetTo(String newSyncToken, List<CachedCalendarResource> resources) {
         try {
-            resourceRepository.deleteBySourceCalendarId(sourceCalendarId);
-            upsertResources(resources);
-            saveSyncToken(newSyncToken);
+            transactionTemplate.executeWithoutResult(status -> {
+                resourceRepository.deleteBySourceCalendarId(sourceCalendarId);
+                upsertResources(resources);
+                saveSyncToken(newSyncToken);
+            });
         } catch (RuntimeException e) {
             throw new CalendarReplicaStoreException(
                     "Failed to reset calendar replica for sourceCalendarId=" + sourceCalendarId, e);

@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Builds one {@link PollAndRelaySourceCalendarUseCase} per calendar declared in
@@ -82,7 +83,8 @@ public class RelayWiringConfiguration {
             PendingCreationJpaRepository pendingCreationJpaRepository,
             CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
             CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
-            BurstBudget relayBurstBudget) {
+            BurstBudget relayBurstBudget,
+            PlatformTransactionManager transactionManager) {
         return buildUseCases(
                 relayProperties,
                 relayCalDavHttpClient,
@@ -92,7 +94,8 @@ public class RelayWiringConfiguration {
                 pendingCreationJpaRepository,
                 calendarReplicaResourceJpaRepository,
                 calendarSyncTokenJpaRepository,
-                relayBurstBudget);
+                relayBurstBudget,
+                transactionManager);
     }
 
     /**
@@ -108,7 +111,8 @@ public class RelayWiringConfiguration {
             PendingCreationJpaRepository pendingCreationJpaRepository,
             CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
             CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
-            BurstBudget burstBudget) {
+            BurstBudget burstBudget,
+            PlatformTransactionManager transactionManager) {
         var recurringEventHorizon = relayProperties.recurringEventHorizon();
         return relayProperties.calendars().stream()
                 .map(calendar -> buildUseCase(
@@ -121,7 +125,8 @@ public class RelayWiringConfiguration {
                         calendarReplicaResourceJpaRepository,
                         calendarSyncTokenJpaRepository,
                         burstBudget,
-                        recurringEventHorizon))
+                        recurringEventHorizon,
+                        transactionManager))
                 .toList();
     }
 
@@ -135,9 +140,13 @@ public class RelayWiringConfiguration {
             CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
             CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
             BurstBudget burstBudget,
-            Period recurringEventHorizon) {
+            Period recurringEventHorizon,
+            PlatformTransactionManager transactionManager) {
         var calendarReplicaStore = new JpaCalendarReplicaStoreAdapter(
-                calendarReplicaResourceJpaRepository, calendarSyncTokenJpaRepository, calendar.id());
+                calendarReplicaResourceJpaRepository,
+                calendarSyncTokenJpaRepository,
+                calendar.id(),
+                transactionManager);
         var calendarSource = new CalDavCalendarSourceAdapter(
                 httpClient,
                 URI.create(calendar.caldavUrl()),
