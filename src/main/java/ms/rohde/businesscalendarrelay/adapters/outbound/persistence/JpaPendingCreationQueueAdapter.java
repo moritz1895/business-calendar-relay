@@ -5,6 +5,7 @@ import ms.rohde.businesscalendarrelay.core.domain.RelayAction;
 import ms.rohde.businesscalendarrelay.ports.outbound.PendingCreationQueue;
 import ms.rohde.businesscalendarrelay.ports.outbound.PendingCreationQueueException;
 import ms.rohde.hexagonalarch.annotations.InfrastructureServiceAdapter;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * {@link PendingCreationQueue} backed by the same embedded, file-mode H2 database as
@@ -51,6 +52,7 @@ public final class JpaPendingCreationQueueAdapter implements PendingCreationQueu
     }
 
     @Override
+    @Transactional
     public void remove(String sourceUid) {
         try {
             repository.deleteBySourceCalendarIdAndSourceUid(sourceCalendarId, sourceUid);
