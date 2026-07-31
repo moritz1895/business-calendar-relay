@@ -129,6 +129,30 @@ Blocker-Mail beim Menschen landet, nicht beim technischen Absender.
 Beide Adressen kommen pro Kalender aus `relay.calendars[].from-address` bzw.
 `relay.calendars[].reply-to-address` (siehe `RelayProperties.CalendarConfig`).
 
+## Mail-`Subject`
+
+```java
+var subject = mail.method() == BlockerMailMethod.CANCEL ? CANCELLED_SUBJECT : TITLE;
+message.setSubject(subject, StandardCharsets.UTF_8.name());
+```
+
+`TITLE` ist `"Privater Blocker"` — **muss** mit `ImipCalendarRenderer`s ICS-
+`SUMMARY`-Literal übereinstimmen. Grund, verifiziert an einer echten
+Mailbox: Outlooks Kalenderansicht übernimmt den Mail-`Subject`-Header als
+Termin-Titel, nicht die ICS-`SUMMARY`. Ein früherer Mismatch (`Subject`
+war fest `"Kalenderaktualisierung"`) führte dazu, dass **jeder** angelegte
+Termin genau diesen falschen Text als Titel zeigte.
+
+Für `METHOD:CANCEL` wird deshalb bewusst **nicht** derselbe Titel
+wiederverwendet, sondern `CANCELLED_SUBJECT = "Abgesagt: " + TITLE`
+(`"Abgesagt: Privater Blocker"`). Hier ist die Auswirkung auf den
+Kalender-Titel ausdrücklich gewollt, nicht die Regression, vor der `TITLE`
+für `REQUEST`-Mails schützt: ein abgesagter Blocker soll in Outlook auf
+den ersten Blick von einem aktiven unterscheidbar sein. `Create` und
+`Update` teilen sich weiterhin denselben `TITLE` ohne Präfix — iTIP kennt
+für beide ohnehin nur `METHOD:REQUEST`, es gibt auf dieser Ebene keine
+Unterscheidung zwischen Erstanlage und Aktualisierung.
+
 ## Spring-Mail-Konfiguration
 
 `application.yml`:

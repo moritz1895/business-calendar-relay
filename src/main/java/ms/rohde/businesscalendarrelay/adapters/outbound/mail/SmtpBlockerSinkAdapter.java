@@ -9,6 +9,7 @@ import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.util.ByteArrayDataSource;
 import java.nio.charset.StandardCharsets;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerMail;
+import ms.rohde.businesscalendarrelay.ports.outbound.BlockerMailMethod;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSinkException;
 import ms.rohde.hexagonalarch.annotations.InfrastructureServiceAdapter;
@@ -37,13 +38,24 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
 
     /**
      * Must match {@code ImipCalendarRenderer}'s {@code SUMMARY:Privater Blocker} literal
-     * exactly. Outlook's calendar grid displays this mail's {@code Subject} header as the
-     * appointment's title, not the ICS {@code SUMMARY} property -- observed directly
-     * against a real mailbox: with a mismatched {@code Subject} ("Kalenderaktualisierung"),
-     * every created appointment showed that mismatched text as its title instead of the
-     * intended titleless placeholder.
+     * exactly for {@code REQUEST} mails (create and update alike -- iTIP has no separate
+     * method for the two, so this can't tell them apart, nor try to). Outlook's calendar
+     * grid displays this mail's {@code Subject} header as the appointment's title, not the
+     * ICS {@code SUMMARY} property -- observed directly against a real mailbox: with a
+     * mismatched {@code Subject} ("Kalenderaktualisierung"), every created appointment
+     * showed that mismatched text as its title instead of the intended titleless
+     * placeholder.
      */
-    private static final String SUBJECT = "Privater Blocker";
+    private static final String TITLE = "Privater Blocker";
+
+    /**
+     * {@code CANCEL} mails deliberately get a distinct, prefixed subject rather than
+     * reusing {@link #TITLE} as-is: unlike a create/update mismatch, a cancelled
+     * appointment's title picking up this prefix in Outlook's calendar grid is desired
+     * here, not a regression to guard against -- it makes a cancelled blocker
+     * visually distinguishable from an active one at a glance.
+     */
+    private static final String CANCELLED_SUBJECT = "Abgesagt: " + TITLE;
 
     private static final String ICS_FILE_NAME = "event.ics";
 
@@ -65,7 +77,8 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
             message.setFrom(new InternetAddress(mail.fromAddress()));
             message.setReplyTo(new InternetAddress[] {new InternetAddress(mail.replyToAddress())});
             message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(mail.toAddress()));
-            message.setSubject(SUBJECT, StandardCharsets.UTF_8.name());
+            var subject = mail.method() == BlockerMailMethod.CANCEL ? CANCELLED_SUBJECT : TITLE;
+            message.setSubject(subject, StandardCharsets.UTF_8.name());
 
             var mixed = new MimeMultipart("mixed");
             mixed.addBodyPart(alternativeBodyPart());
