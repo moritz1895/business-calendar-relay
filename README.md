@@ -137,7 +137,7 @@ für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 | Variable | Beschreibung | Default |
 |---|---|---|
 | `SMTP_HOST` | Hostname des SMTP-Relays für ausgehende iMIP-Mails | — (erforderlich) |
-| `SMTP_PORT` | SMTP-Port | `587` |
+| `SMTP_PORT` | SMTP-Port. Erwartet implizites TLS ("SMTP + SSL/TLS"), nicht STARTTLS — siehe `docs/technical/smtp.md` | `465` |
 | `SMTP_USERNAME` | SMTP-Benutzername | — (erforderlich) |
 | `SMTP_PASSWORD` | SMTP-Passwort | — (erforderlich) |
 | `STATE_STORE_DATA_DIR` | Verzeichnis für die eingebettete, dateibasierte H2-Datenbank hinter `StateStore` (muss neustartfest sein — in Docker als Volume mounten) | `./data` |
