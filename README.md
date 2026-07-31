@@ -9,7 +9,7 @@ nötig ist.
 
 Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 [`CLAUDE.md`](CLAUDE.md) beschrieben (Hexagonal Architecture, Ports:
-`CalendarSource`, `BlockerSink`, `StateStore`).
+`CalendarSource`, `BlockerSink`, `StateStore`, `CalendarReplicaStore`).
 
 ## Features
 
@@ -36,6 +36,17 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 - Auflösung von wiederkehrenden Terminen (`RRULE`) inklusive `EXDATE`- und
   `RECURRENCE-ID`-Overrides zu einzelnen, stabil identifizierten
   Vorkommen.
+- Burst-Filter für die Erstinitialisierung eines Quellkalenders
+  (Anti-Spam-Schutz fürs Business-Postfach, Issue #16): Die vollständige
+  Erstanlage-Liste eines noch nie initialisierten Kalenders wird in einer
+  Warteschlange persistiert und über mehrere Poll-Zyklen hinweg, begrenzt
+  durch ein konfigurierbares, postfachweites Sendebudget, scheibchenweise
+  abgearbeitet, statt in einem Rutsch verschickt zu werden.
+- Delta-Synchronisation der CalDAV-Quellkalender über RFC 6578
+  `sync-collection` mit persistiertem Sync-Token, statt bei jedem Poll die
+  komplette Kalender-Collection erneut anzufordern; automatischer Fallback
+  auf die vollständige RFC-4791-`calendar-query`-Anfrage, sobald ein Server
+  `sync-collection` nicht unterstützt oder ein Sync-Token ungültig wird.
 
 ## Tech-Stack
 
@@ -44,7 +55,7 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 | Sprache/Laufzeit | Java 25 |
 | Anwendungs-Framework | Spring Boot 4.0.x (Scheduling, `@ConfigurationProperties`, Actuator) |
 | Architektur | Hexagonal Architecture (`ms.rohde:hexagonal-arch-*`) |
-| Quellkalender-Zugriff | CalDAV via `java.net.http.HttpClient` (RFC 4791 `calendar-query` REPORT), ICS-Parsing mit `ical4j` |
+| Quellkalender-Zugriff | CalDAV via `java.net.http.HttpClient` — Standardweg ist RFC 6578 `sync-collection` REPORT mit persistiertem Sync-Token (Delta-Sync), automatischer Fallback auf die vollständige RFC 4791 `calendar-query` REPORT bei fehlender Serverunterstützung oder `delta-sync-enabled: false`; ICS-Parsing mit `ical4j` |
 | iMIP/E-Mail-Versand | SMTP via Spring `JavaMailSender` (Jakarta Mail) |
 | Persistenz | Spring Data JPA gegen eingebettetes H2 im Dateimodus |
 | Logging | Log4j2 |
@@ -64,26 +75,52 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 
 ## Status
 
-Alle drei Outbound-Adapter (`CalDavCalendarSourceAdapter`, `SmtpBlockerSinkAdapter`,
-`JpaStateStoreAdapter`) sowie die Anwendungsverdrahtung stehen: ein programmatischer
-Scheduler (`PollAndRelaySchedulerAdapter`) startet nach Anwendungsstart einen
-Poll-Zyklus pro konfiguriertem Quellkalender im festen Intervall
-(`relay.poll-interval`), die Kalenderliste kommt aus einer einzigen
-`relay.calendars`-Konfiguration (siehe unten). Die Struktur der erzeugten
-iMIP-Nachrichten ist über Tests festgenagelt (siehe
+Alle vier Outbound-Adapter (`CalDavCalendarSourceAdapter`,
+`SmtpBlockerSinkAdapter`, `JpaStateStoreAdapter`,
+`JpaCalendarReplicaStoreAdapter`) sowie die Anwendungsverdrahtung stehen: ein
+programmatischer Scheduler (`PollAndRelaySchedulerAdapter`) startet nach
+Anwendungsstart einen Poll-Zyklus pro konfiguriertem Quellkalender im festen
+Intervall (`relay.poll-interval`), die Kalenderliste kommt aus einer
+einzigen `relay.calendars`-Konfiguration (siehe unten). Die Struktur der
+erzeugten iMIP-Nachrichten ist über Tests festgenagelt (siehe
 [`docs/reference/`](docs/reference/) für die zugrunde liegenden, mit Outlook
 verifizierten Referenz-Mails).
 
-Event-Filterung für das initiale Handling großer Kalenderhistorien (Issue
-#3) ist umgesetzt: Ein Quelltermin ohne vorherigen Relay-Zustand wird nur
-dann als neuer Blocker angelegt, wenn sein Start in der Zukunft liegt, er
-kein ganztägiger und kein als "nicht beschäftigt" markierter Termin ist,
-er nicht storniert markiert ist und — bei wiederkehrenden Terminen —
-innerhalb eines konfigurierbaren, nach vorne gleitenden Zeitfensters
-(`relay.recurring-event-horizon`) liegt. Bereits vorhandene Blocker werden
-von diesem Filter nie betroffen, siehe
-[`docs/features/event-filtering.md`](docs/features/event-filtering.md) und
-[`docs/domain.md`](docs/domain.md) für die vollständige Regel.
+Drei Features sind auf dieser Basis inzwischen produktiv umgesetzt:
+
+- **Event-Filterung** für das initiale Handling großer Kalenderhistorien
+  (Issue #3): Ein Quelltermin ohne vorherigen Relay-Zustand wird nur dann
+  als neuer Blocker angelegt, wenn sein Start in der Zukunft liegt, er kein
+  ganztägiger und kein als "nicht beschäftigt" markierter Termin ist, er
+  nicht storniert markiert ist und — bei wiederkehrenden Terminen —
+  innerhalb eines konfigurierbaren, nach vorne gleitenden Zeitfensters
+  (`relay.recurring-event-horizon`) liegt. Bereits vorhandene Blocker werden
+  von diesem Filter nie betroffen, siehe
+  [`docs/features/event-filtering.md`](docs/features/event-filtering.md) und
+  [`docs/domain.md`](docs/domain.md) für die vollständige Regel.
+- **Burst-Filter für die Erstinitialisierung** eines Quellkalenders (Issue
+  #16): Die vollständige Erstanlage-Liste, die beim allerersten Poll-Zyklus
+  eines Kalenders anfällt, wird einmalig in einer Warteschlange persistiert
+  und über mehrere Poll-Zyklen hinweg, begrenzt durch ein konfigurierbares,
+  postfachweites Sendebudget (`relay.initialization.*`), scheibchenweise
+  abgearbeitet, statt sofort komplett verschickt zu werden — siehe
+  [`docs/features/burst-filter-initialization.md`](docs/features/burst-filter-initialization.md).
+- **CalDAV-Delta-Sync via `sync-collection`** (RFC 6578): Statt bei jedem
+  Poll die komplette Kalender-Collection erneut per `calendar-query`
+  abzufragen, hält der Adapter pro Kalender eine lokale Replik der rohen
+  CalDAV-Ressourcen (`CalendarReplicaStore`) und aktualisiert sie anhand
+  eines persistierten Sync-Tokens inkrementell; ein Server ohne
+  `sync-collection`-Unterstützung oder ein ungültig gewordener Token lösen
+  automatisch einen Fallback bzw. Full-Resync aus (siehe ADR-011). Der
+  `CalendarSource`-Vertrag ("immer ein vollständiger Snapshot") bleibt dabei
+  unverändert — siehe
+  [`docs/features/delta-sync.md`](docs/features/delta-sync.md).
+
+**Noch nicht umgesetzt, nur entworfen:** Replica Retirement (periodisches
+Aufräumen alter `CalendarReplicaStore`-/`RelayState`-Einträge) liegt als
+fertig ausgearbeitetes, aber bewusst nicht eingeplantes Design vor — siehe
+[`docs/features/replica-retirement.md`](docs/features/replica-retirement.md)
+für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 
 ## Verhalten (verifiziert gegen Outlook)
 
@@ -147,6 +184,7 @@ Jeder Eintrag in `relay.calendars`:
 | `attendee-email` | Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail geht |
 | `from-address` | `From`/Envelope-From der iMIP-Mail |
 | `reply-to-address` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) |
+| `delta-sync-enabled` | Ob `CalDavCalendarSourceAdapter` für diesen Kalender RFC-6578-`sync-collection`-Delta-Sync verwenden darf (siehe [`docs/features/delta-sync.md`](docs/features/delta-sync.md)). Ein Server, der `sync-collection` nicht unterstützt, wird bereits automatisch erkannt und fällt selbstständig auf `calendar-query` zurück — dieses Feld ist ein manueller Notausschalter für den selteneren Fall, dass diese automatische Erkennung selbst nicht wie erwartet funktioniert. Optional, Default `true`. |
 
 Jedes Feld ist pro Kalender konfigurierbar — für eine einheitliche Identität
 über alle Kalender hinweg genügt es, denselben Wert in jedem Eintrag zu
@@ -163,6 +201,21 @@ Prozessneustart überstehen. Pro konfiguriertem Quellkalender existiert eine
 eigene `JpaStateStoreAdapter`-Instanz, gescoped auf dessen `id` aus
 `relay.calendars`; alle Instanzen teilen sich dieselbe H2-Datenbank und
 `RelayStateJpaRepository`.
+
+`CalendarReplicaStore` (die lokale Replik der rohen CalDAV-Ressourcen plus
+Sync-Token, die `CalDavCalendarSourceAdapter`s Delta-Sync trägt, siehe
+[`docs/features/delta-sync.md`](docs/features/delta-sync.md)) wird ebenfalls
+über Spring Data JPA in derselben H2-Datenbank gehalten, über
+`JpaCalendarReplicaStoreAdapter` in zwei eigenen Tabellen:
+`calendar_replica_resource` (roher `calendar-data`-Inhalt und ETag pro
+`href`) und `calendar_sync_token` (ein Sync-Token pro Kalender). Wie
+`JpaStateStoreAdapter` existiert pro konfiguriertem Quellkalender eine
+eigene `JpaCalendarReplicaStoreAdapter`-Instanz, gescoped auf dessen `id`;
+alle Instanzen teilen sich dieselben zwei Repositories
+(`CalendarReplicaResourceJpaRepository`, `CalendarSyncTokenJpaRepository`).
+Details zum Schema stehen in
+[`docs/technical/database.md`](docs/technical/database.md) und
+[`docs/technical/caldav.md`](docs/technical/caldav.md).
 
 ## Scheduler
 
@@ -186,23 +239,29 @@ Dokumentation liegt unter `docs/`:
 |---|---|
 | [`docs/domain.md`](docs/domain.md) | Fachliches Domänenmodell: Wertobjekte (`SourceEvent`, `BlockerEvent`, `RelayState`, `RelayAction`), Domänendienste und -regeln (z. B. `SEQUENCE`-Invariante, Aufbewahrung abgesagter Zustände, Titellos-Prinzip, Erstellungs-Filter für Bestandsdaten). |
 | [`docs/use-cases.md`](docs/use-cases.md) | Use-Case-Katalog: "Poll and Relay Source Calendar" mit Akteur, Ablauf, Fehlerfällen und Ergebnis, beschrieben anhand des tatsächlichen Code-Verhaltens. |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records für nicht offensichtliche Entscheidungen (eingebettetes H2 pro Kalender, deterministische `blockerUid`-Ableitung aus `sourceUid`, Aufbewahrung abgesagter Relay-Zustände, programmatisches Scheduling, Fehlerisolation im Poll-Zyklus, Bean-Definition-Pruning für pro-Kalender-Komponenten, Erstellungs-Filter als reines Neuanlage-Gate). |
-| [`docs/technical/`](docs/technical/) | Technische Implementierungsdetails der Adapter: Datenbank, CalDAV, SMTP, Scheduling, Infrastruktur. |
+| [`docs/adr/`](docs/adr/) | 11 Architecture Decision Records für nicht offensichtliche Entscheidungen — u. a. eingebettetes H2 pro Kalender (ADR-001), deterministische `blockerUid`-Ableitung aus `sourceUid` (ADR-010, ersetzt ADR-002), Aufbewahrung abgesagter Relay-Zustände (ADR-003), programmatisches Scheduling (ADR-004), Fehlerisolation im Poll-Zyklus (ADR-005), Bean-Definition-Pruning für pro-Kalender-Komponenten (ADR-006), Erstellungs-Filter als reines Neuanlage-Gate (ADR-007), `PendingCreationQueue` als eigener Port statt `StateStore`-Erweiterung (ADR-008), In-Memory-Zähler für `BurstBudget` (ADR-009), enge Klassifikation von "sync-collection nicht unterstützt" (ADR-011). |
+| [`docs/technical/`](docs/technical/) | Technische Implementierungsdetails der Adapter: Datenbank, CalDAV (inkl. Delta-Sync), SMTP, Scheduling, Infrastruktur. |
 | [`docs/features/relay-orchestration.md`](docs/features/relay-orchestration.md) | Ursprüngliche Vorab-Spezifikation (Forward-Mode) der Poll-and-Relay-Orchestrierung. `docs/use-cases.md` beschreibt das tatsächliche Verhalten und markiert Abweichungen davon explizit. |
 | [`docs/features/event-filtering.md`](docs/features/event-filtering.md) | Vorab-Spezifikation (Forward-Mode) der Event-Filterung für das initiale Handling großer Kalenderhistorien (Issue #3) — Erstellungs-Filter, zusammengesetzter `sourceUid` für wiederkehrende Termine, erweiterte Änderungserkennung. Vollständig umgesetzt; `docs/domain.md` und `docs/use-cases.md` fassen das Ergebnis zusammen. |
+| [`docs/features/burst-filter-initialization.md`](docs/features/burst-filter-initialization.md) | Vorab-Spezifikation (Forward-Mode) des Burst-Filters für die Erstinitialisierung eines Quellkalenders (Issue #16) — Rückstands-Warteschlange, postfachweites Sendebudget. Vollständig umgesetzt. |
+| [`docs/features/delta-sync.md`](docs/features/delta-sync.md) | Vorab-Spezifikation (Forward-Mode) des CalDAV-Delta-Syncs via `sync-collection` (RFC 6578) — Sync-Token, lokale Ressourcen-Replik, Fallback-/Full-Resync-Verhalten. Vollständig umgesetzt. |
+| [`docs/features/replica-retirement.md`](docs/features/replica-retirement.md) | Entwurf (Forward-Mode) für ein periodisches Aufräumen alter `CalendarReplicaStore`-/`RelayState`-Einträge. **Nicht umgesetzt** — bewusst nur als fertiges Design geparkt, da die heutige Speicherlast vernachlässigbar ist. |
 | [`docs/reference/`](docs/reference/) | Anonymisierte, mit Outlook verifizierte iMIP-Referenz-Mails (`.eml`), die die strukturellen Anforderungen an die generierten Nachrichten belegen. |
 
 ### Architekturüberblick
 
 Der Service folgt Hexagonal Architecture (siehe [`CLAUDE.md`](CLAUDE.md)):
 Die Anwendungsschicht (`core/app`) orchestriert pro konfiguriertem
-Quellkalender einen Poll-Zyklus über drei ausgehende Ports —
-`CalendarSource` (CalDAV-Lesezugriff), `StateStore` (Relay-Bookkeeping) und
-`BlockerSink` (iMIP-Versand per SMTP) — während der reine Domänenkern
-(`core/domain`) die Diff-Entscheidung (`RelayDiffPlanner`) und das
-iMIP/ICS-Rendering (`ImipCalendarRenderer`) unabhängig von jedem Framework
-kapselt. Ein programmatischer Scheduler (`adapters/inbound/scheduling`)
-treibt jede Use-Case-Instanz an. Details zum fachlichen Modell stehen in
+Quellkalender einen Poll-Zyklus über mehrere ausgehende Ports —
+`CalendarSource` (CalDAV-Lesezugriff, intern per Delta-Sync gegen
+`CalendarReplicaStore` optimiert), `StateStore` (Relay-Bookkeeping),
+`PendingCreationQueue` (Rückstands-Warteschlange der Erstinitialisierung),
+`BurstBudget` (postfachweites Sendebudget) und `BlockerSink`
+(iMIP-Versand per SMTP) — während der reine Domänenkern (`core/domain`) die
+Diff-Entscheidung (`RelayDiffPlanner`) und das iMIP/ICS-Rendering
+(`ImipCalendarRenderer`) unabhängig von jedem Framework kapselt. Ein
+programmatischer Scheduler (`adapters/inbound/scheduling`) treibt jede
+Use-Case-Instanz an. Details zum fachlichen Modell stehen in
 `docs/domain.md`, zu den Use Cases in `docs/use-cases.md`, zu den
 Implementierungsentscheidungen in `docs/adr/` und `docs/technical/`.
 
@@ -213,12 +272,42 @@ Implementierungsentscheidungen in `docs/adr/` und `docs/technical/`.
    CalDAV-Zugangsdaten befüllen (siehe [Konfiguration](#konfiguration)).
 3. `mvn clean install` ausführen, um Build und Tests einmal vollständig
    laufen zu lassen.
-4. `mvn spring-boot:run` starten (die `relay.calendars`-Liste kann für
-   einen ersten Testlauf auch leer bleiben — die Anwendung startet dann
-   ohne konfigurierte Quellkalender).
+4. `mvn spring-boot:run` starten. Für einen ersten Testlauf ohne echten
+   Quellkalender genügt das bereits — `relay.calendars` ist in
+   `src/main/resources/application.yml` bewusst leer gelassen, die
+   Anwendung startet dann sauber ohne konfigurierte Kalender.
 5. Log-Ausgabe beobachten: `PollAndRelaySchedulerAdapter` protokolliert
    nach jedem Poll-Zyklus (`relay.poll-interval`) das Ergebnis pro
    konfiguriertem Quellkalender.
+
+### `relay.calendars` für einen echten lokalen Lauf befüllen
+
+Schritt 4 oben startet absichtlich ohne Quellkalender — `relay.calendars`
+selbst wird dabei **nicht** aus `.env` befüllt, `.env` deckt nur die darin
+referenzierten Umgebungsvariablen ab (`CALDAV_PERSONAL_USERNAME` etc.), nicht
+die Kalenderliste als solche. Um tatsächlich einen Quellkalender zu pollen,
+muss `relay.calendars` selbst gesetzt werden. Spring Boots automatische
+externe Konfiguration lädt aus `./config/` ausschließlich Dateien, deren Name
+zu `application(-*).yml` passt — eine Datei namens `relay-calendars.yml` wird
+dort **nicht** automatisch eingelesen; das ist kein Docker-spezifisches
+Detail, sondern gilt für jeden Startweg. Zwei gleichwertige Optionen:
+
+- **a) Wie in Docker, über `SPRING_CONFIG_ADDITIONAL_LOCATION`:**
+  `config/relay-calendars.yml.example` nach `config/relay-calendars.yml`
+  kopieren (git-ignored) und befüllen, dann beim Start explizit als
+  zusätzliche Konfigurationsquelle einbinden, z. B.
+  `SPRING_CONFIG_ADDITIONAL_LOCATION=file:./config/relay-calendars.yml mvn spring-boot:run`
+  (Bash/Git-Bash) bzw. `$env:SPRING_CONFIG_ADDITIONAL_LOCATION =
+  "file:./config/relay-calendars.yml"; mvn spring-boot:run` (PowerShell).
+  Identischer Mechanismus wie im Docker-Betrieb (siehe unten) — dieselbe
+  Beispieldatei funktioniert für beide Wege.
+- **b) Direkt in `application.yml`:** den auskommentierten
+  `relay.calendars`-Beispielblock in `src/main/resources/application.yml`
+  einkommentieren und befüllen. Einfacher für einen schnellen lokalen Test,
+  aber `application.yml` ist eine versionierte Datei — echte
+  Zugangsdaten-Platzhalter (`${CALDAV_PERSONAL_USERNAME}` usw.) sind
+  unkritisch, ein versehentliches Einchecken darf aber trotzdem nicht
+  passieren.
 
 ## Bauen & Testen
 
