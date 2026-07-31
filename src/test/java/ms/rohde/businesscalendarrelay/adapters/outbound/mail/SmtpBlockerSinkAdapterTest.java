@@ -153,10 +153,15 @@ class SmtpBlockerSinkAdapterTest {
     }
 
     @Test
-    void send_givenMail_thenSubjectIsSetToNeutralStaticText() throws MessagingException {
+    void send_givenMail_thenSubjectMatchesImipCalendarRenderersTitlelessSummaryLiteral() throws MessagingException {
         var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST));
 
-        assertThat(sent.getSubject()).isNotBlank();
+        // Pinned, not just "non-blank": Outlook's calendar grid displays this Subject header
+        // as the appointment's title, not the ICS SUMMARY property, so the two must be kept
+        // in sync (see ImipCalendarRenderer's "SUMMARY:Privater Blocker" literal) -- a
+        // mismatch here previously surfaced as a wrong-but-non-obviously-wrong appointment
+        // title in a real mailbox, silently, with no test catching it.
+        assertThat(sent.getSubject()).isEqualTo("Privater Blocker");
     }
 
     @Test
