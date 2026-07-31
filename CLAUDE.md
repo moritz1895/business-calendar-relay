@@ -28,7 +28,12 @@ integration — plain SMTP with a `text/calendar` MIME part.
 - `BlockerSink` (outbound) — sends iMIP mail (SMTP) representing a blocker
   create/update/cancel.
 - `StateStore` (outbound) — persists the relay mapping (source UID → blocker
-  UID/SEQUENCE) and, later, CalDAV sync tokens for `sync-collection` deltas.
+  UID/SEQUENCE).
+- `CalendarReplicaStore` (outbound) — persists the per-calendar CalDAV
+  `sync-collection` sync-token plus a raw-resource replica for delta-sync
+  (RFC 6578, see `docs/features/delta-sync.md`, ADR-011). A dedicated port,
+  not a `StateStore` extension — same rationale as `PendingCreationQueue`
+  (ADR-008).
 
 Application layer orchestrates: poll `CalendarSource` → diff against
 `StateStore` → emit the right iMIP method via `BlockerSink` → update
@@ -108,9 +113,22 @@ nullability intent — real module boundaries matter for libraries (like
 
 ## Deliberately deferred
 
-- **Delta detection**: full poll-and-diff first; CalDAV `sync-collection`
-  (RFC 6578) sync-token support comes later once the basic relay works
-  end-to-end. Still deferred — current next feature on the roadmap.
+- ~~**Delta detection**~~ Done (no GitHub issue — this roadmap note was its
+  own driving spec, `docs/features/delta-sync.md`, PR #23; implementation
+  PR #24, commits `7026e45`/`e141ecc`): `CalDavCalendarSourceAdapter` now
+  uses an RFC 6578 `sync-collection` REPORT with a persisted per-calendar
+  sync-token (`CalendarReplicaStore` port) instead of an always-full
+  `calendar-query`, whenever the CalDAV server supports it and
+  `relay.calendars[].delta-sync-enabled` (default `true`) is not turned
+  off for that calendar. An invalid-token response triggers an automatic
+  forced full resync; a narrow, deliberately conservative set of responses
+  (`501`, `415`, `403` without the `valid-sync-token` precondition)
+  triggers a permanent, in-process fallback to the legacy `calendar-query`
+  request; any other unexpected response fails only that one poll cycle and
+  retries with the same, still-valid token on the next cycle (see
+  ADR-011). `CalendarSource.readEvents()`'s "always a full snapshot"
+  contract is unchanged, and `core/domain`/`core/app` are untouched — see
+  `docs/domain.md`/`docs/use-cases.md`.
 - ~~**Filtering logic**~~ Done (Issue #3, `docs/features/event-filtering.md`):
   a creation-eligibility gate (past-cutoff, all-day exclusion, transparent/
   free exclusion, `STATUS:CANCELLED` exclusion, a configurable forward
