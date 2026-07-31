@@ -42,3 +42,6 @@ target/
 ### Real relay.calendars override (CalDAV URLs, mounted into docker-compose.yml) ###
 /config/*
 !/config/relay-calendars.yml.example
+
+### Standalone local deployment instance (real CalDAV URLs/usernames, real .env) ###
+/run/
