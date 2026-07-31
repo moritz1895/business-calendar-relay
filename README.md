@@ -230,9 +230,23 @@ mvn spring-boot:run         # Lokal starten
 
 ## Docker
 
+Vor dem ersten Start:
+
+1. `.env.example` nach `.env` kopieren und echte Werte eintragen (SMTP,
+   CalDAV-Zugangsdaten, Relay-Identität pro Kalender).
+2. `config/relay-calendars.yml.example` nach `config/relay-calendars.yml`
+   kopieren und die tatsächliche(n) Kalenderliste(n) eintragen (Datei muss
+   existieren, bevor `docker compose up` läuft — sonst legt Docker an ihrer
+   Stelle ein leeres Verzeichnis an). Beide Dateien sind `.gitignore`t.
+
 ```bash
 docker compose up --build
 ```
+
+`docker-compose.yml` reicht `.env` unverändert als Environment durch und
+mountet `config/relay-calendars.yml` read-only nach
+`/app/config/relay-calendars.yml`, per `SPRING_CONFIG_ADDITIONAL_LOCATION`
+eingebunden (siehe "Quellkalender (`relay.calendars`)" oben).
 
 Hinweis: Der Build zieht `ms.rohde:hexagonal-arch-*` als `1.0.0-SNAPSHOT` aus
 dem lokalen Maven-Repository. Für einen containerisierten Build außerhalb
