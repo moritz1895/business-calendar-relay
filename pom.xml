@@ -95,6 +95,22 @@
             </exclusions>
         </dependency>
 
+        <!-- Embedded servlet container (Tomcat) so Actuator can actually expose
+             /actuator/health over HTTP on port 8080; without this, spring-boot-starter-actuator
+             alone never binds a port, and the Dockerfile HEALTHCHECK/docker-compose.yml port
+             mapping have nothing to reach. No REST controllers exist or are planned; this app
+             stays otherwise headless. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- Log4j2 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
