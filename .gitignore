@@ -38,3 +38,7 @@ target/
 *.jks
 *.p12
 *.pfx
+
+### Real relay.calendars override (CalDAV URLs, mounted into docker-compose.yml) ###
+/config/*
+!/config/relay-calendars.yml.example

@@ -4,13 +4,72 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Hostname des SMTP-Relais für ausgehende iMIP-Mails (BlockerSink).
+      # Kein Default -- erforderlich, siehe .env.example.
       SMTP_HOST: ${SMTP_HOST}
+      # SMTP-Port. Default: 587
       SMTP_PORT: ${SMTP_PORT:-587}
+      # SMTP-Benutzername. Kein Default -- erforderlich, siehe .env.example.
       SMTP_USERNAME: ${SMTP_USERNAME}
+      # SMTP-Passwort. Kein Default -- erforderlich, siehe .env.example.
       SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # Verzeichnis der eingebetteten, dateibasierten H2-Datenbank hinter StateStore.
+      # Fest auf /app/data gesetzt (passend zum "relay-state-data"-Volume unten) --
+      # anders als die übrigen Variablen hier bewusst nicht aus .env befüllt, da der
+      # Pfad *innerhalb* des Containers liegt, nicht auf dem Host. Anwendungsseitiger
+      # Default (außerhalb von Docker, z. B. bei "mvn spring-boot:run"): ./data
       STATE_STORE_DATA_DIR: /app/data
+      # Intervall, in dem jeder konfigurierte Quellkalender abgefragt wird
+      # (Spring-Duration-Syntax, z. B. 5m, 300s). Default: 5m
+      RELAY_POLL_INTERVAL: ${RELAY_POLL_INTERVAL:-5m}
+      # Wie weit ein Vorkommen eines wiederkehrenden Quelltermins in der Zukunft
+      # liegen darf, um noch erstmals als Blocker angelegt zu werden -- gilt
+      # einheitlich für jeden konfigurierten Quellkalender (ISO-8601-Period-Syntax,
+      # z. B. P6M, P90D). Einzeltermine sind davon nicht betroffen. Default: P6M
+      RELAY_RECURRING_EVENT_HORIZON: ${RELAY_RECURRING_EVENT_HORIZON:-P6M}
+      # Wie viele Erstanlagen pro RELAY_INITIALIZATION_BURST_INTERVAL beim einmaligen
+      # Initialisieren eines Quellkalenders höchstens verschickt werden dürfen --
+      # postfachweit, über alle konfigurierten Quellkalender zusammengerechnet, keine
+      # Pro-Kalender-Einstellung. Wirkt ausschließlich auf die einmalige
+      # Erstinitialisierung. Default: 5
+      RELAY_INITIALIZATION_BURST_SIZE: ${RELAY_INITIALIZATION_BURST_SIZE:-5}
+      # Fenstergröße des Sendebudgets aus RELAY_INITIALIZATION_BURST_SIZE
+      # (Spring-Duration-Syntax, z. B. PT1H, 30m) -- ebenfalls postfachweit und
+      # global. Default: PT1H
+      RELAY_INITIALIZATION_BURST_INTERVAL: ${RELAY_INITIALIZATION_BURST_INTERVAL:-PT1H}
+      # One source calendar's CalDAV credentials + relay identity, referenced from
+      # config/relay-calendars.yml (see config/relay-calendars.yml.example). Add one
+      # differently-named block per additional configured calendar (matching a second
+      # entry in that file), same as documented in .env.example. None of the six
+      # variables below have a default -- all required once referenced from
+      # config/relay-calendars.yml.
+      # CalDAV-Basic-Auth-Benutzername für den Quellkalender.
+      CALDAV_PERSONAL_USERNAME: ${CALDAV_PERSONAL_USERNAME}
+      # CalDAV-Basic-Auth-Passwort für den Quellkalender.
+      CALDAV_PERSONAL_PASSWORD: ${CALDAV_PERSONAL_PASSWORD}
+      # Organizer-Adresse, die auf jeden aus diesem Kalender erzeugten Blocker gesetzt
+      # wird (iCal ORGANIZER).
+      RELAY_PERSONAL_ORGANIZER_EMAIL: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
+      # Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail für diesen
+      # Kalender geht (iCal ATTENDEE).
+      RELAY_PERSONAL_ATTENDEE_EMAIL: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
+      # From-/Envelope-From-Adresse der iMIP-Mail für diesen Kalender.
+      RELAY_PERSONAL_FROM_ADDRESS: ${RELAY_PERSONAL_FROM_ADDRESS}
+      # Reply-To-Adresse der iMIP-Mail für diesen Kalender (i. d. R. die menschliche
+      # Adresse des Organizers, nicht die technische From-Adresse).
+      RELAY_PERSONAL_REPLY_TO_ADDRESS: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
+      # Bindet config/relay-calendars.yml (siehe Volume-Mount unten) als zusätzliche,
+      # überschreibende Spring-Konfigurationsquelle ein -- das ist der Ort, an dem
+      # relay.calendars tatsächlich befüllt wird. Fester Pfad, kein Default nötig,
+      # nicht aus .env befüllt.
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/relay-calendars.yml
     volumes:
       - relay-state-data:/app/data
+      # Real source-calendar list -- copy config/relay-calendars.yml.example to
+      # config/relay-calendars.yml (git-ignored) and fill in real calendar entries
+      # before starting. Must exist as a file (not a directory) before `docker compose
+      # up`, otherwise Docker creates an empty directory in its place.
+      - ./config/relay-calendars.yml:/app/config/relay-calendars.yml:ro
     restart: unless-stopped
 
 volumes:

@@ -1,0 +1,30 @@
+# Copy this file to config/relay-calendars.yml (git-ignored, see .gitignore) and add
+# one entry per private source calendar. Credentials and per-calendar addresses stay in
+# .env (see .env.example, mapped through in docker-compose.yml) and are only referenced
+# here via ${...} placeholders -- never put real credentials directly into this file.
+#
+# `id` is the persistence key for this calendar's relay state -- never rename it once
+# events have been relayed under it (see README.md "Quellkalender (relay.calendars)").
+relay:
+  calendars:
+    - id: personal-nextcloud
+      caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
+      caldav-username: ${CALDAV_PERSONAL_USERNAME}
+      caldav-password: ${CALDAV_PERSONAL_PASSWORD}
+      organizer-email: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
+      attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
+      from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
+      reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
+      # delta-sync-enabled: true   -- default; set to false to permanently fall back to
+      # the full calendar-query request for this one calendar (e.g. a server that
+      # implements sync-collection incorrectly but isn't cleanly detectable as
+      # unsupported).
+
+    # - id: work-nextcloud
+    #   caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/work/
+    #   caldav-username: ${CALDAV_WORK_USERNAME}
+    #   caldav-password: ${CALDAV_WORK_PASSWORD}
+    #   organizer-email: ${RELAY_WORK_ORGANIZER_EMAIL}
+    #   attendee-email: ${RELAY_WORK_ATTENDEE_EMAIL}
+    #   from-address: ${RELAY_WORK_FROM_ADDRESS}
+    #   reply-to-address: ${RELAY_WORK_REPLY_TO_ADDRESS}
