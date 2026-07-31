@@ -8,7 +8,10 @@ RUN mvn -s settings.xml package -DskipTests -q
 FROM eclipse-temurin:25-jre-alpine AS runtime
 WORKDIR /app
 
-RUN addgroup -S relay && adduser -S relay -G relay \
+# Fixed, explicit UID/GID (not Alpine's auto-assigned -S value, which isn't guaranteed
+# stable across base-image versions) so a host bind-mount for /app/data (see
+# docker-compose.yml) can be chowned to a predictable, documented owner on the host side.
+RUN addgroup -g 10001 -S relay && adduser -u 10001 -S relay -G relay \
     && mkdir -p /app/data && chown -R relay:relay /app
 USER relay
 

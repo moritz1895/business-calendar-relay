@@ -37,9 +37,11 @@ spring:
 Die Umgebungsvariable `STATE_STORE_DATA_DIR` (Default `./data`) wird direkt in
 den H2-Dateipfad interpoliert: die DB-Dateien landen unter
 `${STATE_STORE_DATA_DIR}/relay-state.mv.db`. In `docker-compose.yml` wird
-`STATE_STORE_DATA_DIR=/app/data` gesetzt und dieses Verzeichnis über das
-Named Volume `relay-state-data` gemountet, damit die Datei einen
-Container-Neustart übersteht.
+`STATE_STORE_DATA_DIR=/app/data` gesetzt und dieses Verzeichnis über einen
+Bind-Mount (`./data` auf dem Host, bewusst kein Docker-named-Volume — siehe
+`README.md`, Abschnitt „Datenbank-Datei / Zustand zwischen Umgebungen
+synchronisieren“) gemountet, damit die Datei einen Container-Neustart
+übersteht und als normale Host-Datei kopierbar bleibt.
 
 `hibernate.ddl-auto: update` lässt Hibernate das Schema aus den
 `@Entity`-Klassen ableiten und bei Bedarf ergänzen — es gibt kein Flyway/

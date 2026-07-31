@@ -1,9 +1,12 @@
 services:
   app:
-    build: .
-    # Fixed, explicit tag (not the default folder-derived name docker compose would pick)
-    # so build-and-export-image.sh produces a stable, predictable artifact regardless of
-    # which directory this file is copied into.
+    # No `build:` here on purpose -- this file is for a target system that received the
+    # image as a tarball (see build-and-export-image.sh) and never has the source tree
+    # (Dockerfile, pom.xml, src/, settings.xml) available at all. Load the tarball first:
+    #   docker load -i business-calendar-relay-image.tar
+    # then bring the service up with this file explicitly, since it isn't named
+    # docker-compose.yml:
+    #   docker compose -f docker-compose.deploy.yml up -d
     image: business-calendar-relay:latest
     ports:
       - "8080:8080"
