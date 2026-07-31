@@ -3,14 +3,23 @@ spring:
     name: business-calendar-relay
   mail:
     host: ${SMTP_HOST}
-    port: ${SMTP_PORT:587}
+    port: ${SMTP_PORT:465}
     username: ${SMTP_USERNAME}
     password: ${SMTP_PASSWORD}
     properties:
       mail:
         smtp:
           auth: true
-          starttls:
+          # Implicit TLS ("SMTP + SSL/TLS", port 465), not STARTTLS (port 587): the
+          # connection is wrapped in TLS immediately on connect. Deliberately not
+          # starttls.enable -- a mismatch here (STARTTLS client against an
+          # implicit-TLS-only server) doesn't just fail to send mail, it produces a
+          # connection that never completes a valid handshake at all, which is exactly
+          # the pattern that got this service's deploying network blocked by a mail
+          # provider's abuse detection. If a given SMTP relay requires STARTTLS on 587
+          # instead, override SMTP_PORT to 587 and set ssl.enable to false / starttls
+          # enable to true via SPRING_MAIL_PROPERTIES_MAIL_SMTP_* env vars.
+          ssl:
             enable: true
           # Without an explicit timeout, Spring Boot's MailHealthIndicator (actuator
           # /actuator/health) can block for several minutes on an unreachable or

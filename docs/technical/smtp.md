@@ -137,16 +137,41 @@ Beide Adressen kommen pro Kalender aus `relay.calendars[].from-address` bzw.
 spring:
   mail:
     host: ${SMTP_HOST}
-    port: ${SMTP_PORT:587}
+    port: ${SMTP_PORT:465}
     username: ${SMTP_USERNAME}
     password: ${SMTP_PASSWORD}
     properties:
       mail:
         smtp:
           auth: true
-          starttls:
+          ssl:
             enable: true
+          connectiontimeout: 3000
+          timeout: 3000
+          writetimeout: 3000
 ```
+
+**Implizites TLS (`ssl.enable`), nicht STARTTLS.** Die Verbindung wird
+sofort beim Connect in TLS eingepackt (Standardport `465`, "SMTP +
+SSL/TLS"), statt sich erst im Klartext zu verbinden und danach per
+`STARTTLS`-Kommando hochzustufen (Standardport `587`). Ein
+Protokoll-Mismatch hier — ein STARTTLS-Client gegen einen
+Implizit-TLS-only-Server — führt nicht einfach zu einem Sendefehler,
+sondern zu Verbindungen, die nie einen gültigen Handshake abschließen:
+beide Seiten warten passiv aufeinander. Genau dieses Muster hat bei einem
+realen Deployment die sendende IP innerhalb weniger Minuten in die
+automatisierte Missbrauchserkennung des Mail-Providers laufen lassen
+(ausgelöst über den Actuator-Mail-Health-Check, der alle 30s eine echte
+Verbindung versucht hat — deshalb ist dieser Health-Check inzwischen
+komplett deaktiviert, siehe unten). Erwartet ein Relay stattdessen
+STARTTLS auf Port 587, muss `SMTP_PORT` auf `587` gesetzt und
+`spring.mail.properties.mail.smtp.ssl.enable` auf `false` (plus
+`starttls.enable: true`) umgestellt werden.
+
+Die drei `*timeout`-Werte (Millisekunden) verhindern, dass ein
+unerreichbarer oder feuerwallter SMTP-Host den aufrufenden Poll-Zyklus
+unbegrenzt blockiert — ohne sie hing ein einzelner Verbindungsversuch
+beobachtet bis zu ~300000ms (5 Minuten).
 
 `SmtpBlockerSinkAdapter` bekommt einen fertig konfigurierten
 `JavaMailSender` (Spring-Boot-Autokonfiguration aus
@@ -165,4 +190,16 @@ in eine `BlockerSinkException` (`ports/outbound/BlockerSinkException.java`)
 übersetzt. `PollAndRelaySourceCalendarService` fängt diese pro Quell-Event
 ab: ein fehlgeschlagener Versand bricht nicht den gesamten Poll-Zyklus ab,
 sondern wird als `RelayFailure` im `RelayCycleResult` gesammelt und vom
-Scheduler als WARN geloggt (siehe `scheduling.md`).
+Scheduler als WARN geloggt, inklusive vollem Stacktrace (siehe
+`scheduling.md`).
+
+## Kein SMTP-Health-Check
+
+`management.health.mail.enabled: false` (`application.yml`) deaktiviert
+Actuators eingebauten `MailHealthIndicator` bewusst vollständig. Der würde
+sonst bei jedem `/actuator/health`-Aufruf eine echte SMTP-Verbindung
+versuchen — beim Docker-`HEALTHCHECK`-Intervall von 30s ohne jeden Backoff.
+Die einzige SMTP-Kommunikation, die dieser Service je erzeugt, ist damit
+ein echter Sendeversuch, wenn tatsächlich ein Termin zu relayen ist
+(gedrosselt auf `relay.poll-interval`, siehe oben "Implizites TLS" für den
+konkreten Vorfall, der zu dieser Entscheidung geführt hat).

@@ -7,8 +7,9 @@ services:
       # Hostname des SMTP-Relais für ausgehende iMIP-Mails (BlockerSink).
       # Kein Default -- erforderlich, siehe .env.example.
       SMTP_HOST: ${SMTP_HOST}
-      # SMTP-Port. Default: 587
-      SMTP_PORT: ${SMTP_PORT:-587}
+      # SMTP-Port. Implizites TLS ("SMTP + SSL/TLS"), nicht STARTTLS -- siehe
+      # application.yml. Default: 465
+      SMTP_PORT: ${SMTP_PORT:-465}
       # SMTP-Benutzername. Kein Default -- erforderlich, siehe .env.example.
       SMTP_USERNAME: ${SMTP_USERNAME}
       # SMTP-Passwort. Kein Default -- erforderlich, siehe .env.example.
