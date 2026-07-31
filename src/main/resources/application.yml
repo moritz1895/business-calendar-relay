@@ -12,6 +12,16 @@ spring:
           auth: true
           starttls:
             enable: true
+          # Without an explicit timeout, Spring Boot's MailHealthIndicator (actuator
+          # /actuator/health) can block for several minutes on an unreachable or
+          # firewalled SMTP host instead of failing fast -- observed directly: an
+          # unreachable host took ~300000ms (5 minutes) to time out, far past the
+          # Dockerfile HEALTHCHECK's --timeout, making the container falsely report
+          # unhealthy indefinitely instead of a fast, correct DOWN. All three in
+          # milliseconds, matched to the Dockerfile HEALTHCHECK's own timeout budget.
+          connectiontimeout: 3000
+          timeout: 3000
+          writetimeout: 3000
   datasource:
     url: jdbc:h2:file:${STATE_STORE_DATA_DIR:./data}/relay-state
     driver-class-name: org.h2.Driver
