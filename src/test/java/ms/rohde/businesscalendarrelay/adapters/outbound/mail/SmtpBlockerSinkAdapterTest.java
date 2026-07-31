@@ -165,6 +165,13 @@ class SmtpBlockerSinkAdapterTest {
     }
 
     @Test
+    void send_givenCancelMail_thenSubjectIsPrefixedToDistinguishItFromAnActiveBlocker() throws MessagingException {
+        var sent = sendAndCapture(blockerMail(BlockerMailMethod.CANCEL));
+
+        assertThat(sent.getSubject()).isEqualTo("Abgesagt: Privater Blocker");
+    }
+
+    @Test
     void send_givenMailSenderSendThrowsMailException_thenWrapsIntoBlockerSinkExceptionWithoutSwallowingCause() {
         var mimeMessage = newMimeMessage();
         given(mailSender.createMimeMessage()).willReturn(mimeMessage);
