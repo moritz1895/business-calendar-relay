@@ -137,6 +137,15 @@ nullability intent — real module boundaries matter for libraries (like
   creation — it never retroactively cancels an already-active blocker.
   Title/content scrubbing remains out of scope: `SourceEvent` still carries
   no `SUMMARY`/`DESCRIPTION`, by design (see `docs/domain.md`).
+- **Replica retirement**: designed, not scheduled (no GitHub issue,
+  `docs/features/replica-retirement.md`) — periodic pruning of old
+  `CalendarReplicaStore` rows and their `RelayState` entries once a source
+  event is far enough in the past to no longer matter. Storage cost is
+  negligible today (raw ICS text is a few KB per resource, even years of
+  history stays single-digit MB), so this is a considered design parked for
+  if that assumption ever stops holding, not a proven current need. Unlike
+  the two entries above, genuinely not scheduled — a design sketch, not a
+  committed roadmap item.
 
 ## Test fixtures
 
