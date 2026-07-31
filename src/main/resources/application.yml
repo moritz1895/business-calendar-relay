@@ -27,6 +27,22 @@ management:
     web:
       exposure:
         include: health
+  health:
+    mail:
+      # Actuator's built-in MailHealthIndicator opens a real SMTP connection on every
+      # single /actuator/health call -- with the Dockerfile HEALTHCHECK polling every
+      # 30s, that's a live connection attempt to a real external mail server, forever,
+      # with no backoff. Observed directly: this pattern (repeated connection attempts
+      # to a TLS mail port that never complete a valid handshake, caused by a separate
+      # protocol misconfiguration) got the deploying network's IP blocked by the mail
+      # provider's abuse detection within minutes. Disabled entirely rather than merely
+      # throttled (e.g. via management.endpoint.health.cache.time-to-live) -- the only
+      # SMTP traffic this service should ever generate is a genuine send attempt when
+      # there is an actual event to relay, which already logs full failure detail (see
+      # PollAndRelaySourceCalendarService). Container health (JVM + datasource) stays
+      # meaningful without depending on an external network dependency a container
+      # restart couldn't fix anyway.
+      enabled: false
 
 relay:
   poll-interval: ${RELAY_POLL_INTERVAL:5m}
