@@ -62,6 +62,11 @@ unten).
   alle teilen sich denselben Sendebudget-Zähler.
 - Ein Sendebudget (`burst-size`, `burst-interval`) ist konfiguriert —
   global für alle Quellkalender, siehe README.
+- Für diesen Quellkalender ist optional Delta-Sync aktiviert
+  (`delta-sync-enabled`, Default `true`, pro Kalender konfigurierbar) — reine
+  Konfiguration **der Beschaffungsart** von `CalendarSource`, ohne jeden
+  Einfluss auf den restlichen Ablauf dieses Use Case (siehe eigener
+  Abschnitt "CalDAV-Beschaffung" weiter unten).
 
 #### Kommandofelder
 
@@ -116,7 +121,10 @@ greift.
    unveränderte Zyklus:
    - Der Use Case liest die vollständige, aktuelle Menge an Terminen
      (`currentEvents`) über `CalendarSource.readEvents()`. Das ist immer
-     eine vollständige Momentaufnahme, nie ein Delta.
+     eine vollständige Momentaufnahme, nie ein Delta — unabhängig davon, ob
+     `CalendarSource` diese Momentaufnahme intern per Delta-Sync oder per
+     vollständiger Anfrage beschafft hat (siehe "CalDAV-Beschaffung:
+     Delta-Sync" weiter unten).
    - `RelayDiffPlanner` berechnet aus `currentEvents`, `priorStates`, dem
      aktuellen Zeitpunkt (`now`) und dem konfigurierten
      `recurringEventHorizon` eine Liste von Aktionen — je Quelltermin
@@ -220,6 +228,63 @@ Einträge auf einmal versenden — die eigentliche Drosselung liegt
 vollständig im `BurstBudget`, nicht in einer zusätzlichen
 Pro-Zyklus-Obergrenze dieser Methode.
 
+#### CalDAV-Beschaffung: Delta-Sync (adapterinterne Optimierung, für diesen Use Case transparent)
+
+Betrifft ausschließlich, **wie** `CalendarSource.readEvents()` in Schritt 3
+und 5 oben intern zu seiner vollständigen `currentEvents`-Momentaufnahme
+kommt — der Use Case selbst, `RelayDiffPlanner` und `StateStore` sehen davon
+nichts und verhalten sich in jedem der folgenden Fälle identisch. Nur
+relevant, solange `delta-sync-enabled` für diesen Kalender nicht auf `false`
+gesetzt ist (siehe Vorbedingungen oben); ist Delta-Sync deaktiviert, liest
+`readEvents()` unverändert wie vor diesem Feature stets vollständig.
+
+- **Noch nie synchronisiert (kein Sync-Token bekannt).** `readEvents()`
+  fragt beim CalDAV-Server einmalig vollständig ab und erhält dabei zugleich
+  einen neuen Sync-Token, den es zusammen mit den gelesenen Ressourcen
+  speichert. Kostet dieselbe Serverlast wie die bisherige, stets
+  vollständige Anfrage — kein Regressionsrisiko gegenüber vor diesem
+  Feature.
+- **Bereits ein Sync-Token bekannt.** `readEvents()` fragt den Server
+  ausschließlich nach den seit dem letzten Poll geänderten oder entfernten
+  Ressourcen und erhält dabei zugleich einen neuen Sync-Token. Nur diese
+  Änderungen werden übertragen; die vollständige `currentEvents`-Menge wird
+  anschließend trotzdem bei jedem Aufruf frisch aus **allen** lokal bekannten
+  Ressourcen (den unveränderten plus den soeben aktualisierten) berechnet —
+  eine wiederkehrende Serie, deren zugrunde liegende Ressource sich nie
+  ändert, liefert dadurch weiterhin bei jedem Zyklus neue Vorkommen, sobald
+  das Wiederholungs-Zeitfenster weiter fortschreitet.
+- **Der Server erklärt den bekannten Sync-Token für ungültig.** Der Adapter
+  erkennt dies an den beiden von RFC 6578 vorgesehenen Signalen und führt
+  automatisch, ohne manuellen Eingriff, einmalig eine vollständige
+  Neusynchronisation durch (wie beim allerersten Poll oben) — kein
+  Datenverlust, im ungünstigsten Fall dieselbe Serverlast wie eine
+  gewöhnliche vollständige Anfrage.
+- **Der Server unterstützt Delta-Sync für diese Collection erkennbar nicht.**
+  Nur ein eng gefasstes, konkretes Set an Serverantworten wird als
+  eindeutiges "nicht unterstützt"-Signal gewertet (siehe ADR-011 für die
+  Begründung dieser bewussten Enge). Trifft eines davon ein, schaltet der
+  Adapter für die verbleibende Lebensdauer dieser Prozessinstanz dauerhaft
+  auf die bisherige, stets vollständige Anfrage zurück — ohne Datenverlust,
+  einmalig protokolliert. Ein Neustart des Prozesses versucht Delta-Sync
+  erneut.
+- **Der Server antwortet unerwartet, aber nicht eindeutig als
+  "nicht unterstützt" erkennbar** (z. B. ein vorübergehender
+  Serverfehler). Dies wird **nicht** als fehlende Unterstützung gewertet —
+  der Adapter schaltet nicht dauerhaft um. Stattdessen schlägt lediglich
+  dieser eine Poll-Zyklus fehl, exakt wie jeder andere fehlgeschlagene
+  `readEvents()`-Aufruf (siehe Fehlerfälle unten); der nächste Zyklus
+  versucht Delta-Sync erneut, mit demselben, weiterhin gültigen Sync-Token.
+  Diese bewusste Unterscheidung verhindert, dass ein einzelner, vorüber­
+  gehender Serverfehler einen gesunden Kalender fälschlich und dauerhaft auf
+  den langsameren Beschaffungsweg abschieben würde — siehe ADR-011.
+
+Unabhängig davon, welcher der obigen Fälle in einem gegebenen Zyklus
+eintritt: Das Ergebnis ist immer dieselbe Art von vollständiger
+`currentEvents`-Momentaufnahme, berechnet nach denselben Regeln
+(`event-filtering.md`) wie zuvor. `RelayDiffPlanner` trifft seine
+Entscheidungen (Erstellung, Aktualisierung, Absage, keine Aktion) exakt wie
+vor diesem Feature.
+
 #### Fehlerfälle
 
 - **`CalendarSource.readEvents()` schlägt fehl.** Es wurde in diesem Zyklus
@@ -228,6 +293,17 @@ Pro-Zyklus-Obergrenze dieser Methode.
   laufenden System fängt `PollAndRelaySchedulerAdapter` diese Ausnahme
   generisch ab, protokolliert sie als "Poll cycle aborted unexpectedly" und
   lässt den nächsten planmäßigen Zyklus unberührt.
+- **Bei aktiviertem Delta-Sync: Laden oder Schreiben des Sync-Tokens bzw.
+  der lokalen Ressourcen-Replik schlägt fehl.** Wird unverändert als
+  fehlgeschlagener `CalendarSource.readEvents()`-Aufruf behandelt (siehe
+  oben) — derselbe vollständige Zyklusabbruch, dasselbe generische
+  "Poll cycle aborted unexpectedly"-Logging. Ein Absturz zwischen einer
+  bereits erfolgreich empfangenen Delta-Antwort des Servers und deren
+  Speicherung ist dabei folgenlos: Der nächste Zyklus fragt beim Server
+  erneut mit dem alten, zuletzt erfolgreich gespeicherten Sync-Token an (der
+  aus der verlorenen Antwort stammende neue Token wurde ja nie persistiert)
+  und erhält denselben Delta ein zweites Mal — kein Datenverlust, keine
+  Lücke in `currentEvents`.
 - **`StateStore.loadAll()` schlägt fehl.** Gleiches Verhalten wie oben —
   vollständiger Abbruch, da noch nichts versendet wurde.
 - **`BlockerSink.send(...)` schlägt für eine einzelne Erstellung,

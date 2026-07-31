@@ -257,6 +257,27 @@ noch als Erstanlage verschickt — ein eng begrenztes, akzeptiertes Risiko
 Dauerbetrieb), das sich von selbst auflöst, sobald der gewöhnliche Zyklus
 nach abgeschlossenem Draining wieder frische Quelltermine liest.
 
+## CalDAV-Beschaffung: Delta-Sync als adapterinterne Optimierung
+
+Seit dem Delta-Sync-Feature (`docs/features/delta-sync.md`) kann der
+CalDAV-Quellkalender-Adapter seine Rohdaten wahlweise über eine RFC-6578-
+`sync-collection`-Anfrage mit einem persistierten Sync-Token statt über die
+bisherige, stets vollständige Anfrage beschaffen. Diese Optimierung ändert
+am Domänenmodell **nichts** — sie ist bewusst vollständig hinter dem
+`CalendarSource`-Port verborgen (siehe `docs/use-cases.md` für den fachlichen
+Ablauf und `docs/technical/caldav.md` für die vollständige technische
+Mechanik). Sie wird hier dennoch kurz erwähnt, weil sie eine wichtige
+Garantie berührt, auf der `SourceEvent`, `RelayDiffPlanner` und `RelayState`
+aufbauen: **`CalendarSource.readEvents()` liefert unverändert bei jedem
+Aufruf die vollständige, aktuelle Menge an Quellterminen — nie ein Delta.**
+Ob der Adapter intern dafür alle Ressourcen neu abfragt oder nur die seit
+dem letzten Poll geänderten Ressourcen anfordert und lokal mit einer bereits
+bekannten Replik zusammenführt, ist für jeden Konsumenten dieses Ports
+ununterscheidbar. Kein Wertobjekt, kein Domänendienst und keine
+Domänenregel in diesem Dokument kennt einen Sync-Token, ein `href` oder ein
+ETag — dieses Wissen bleibt vollständig an der Adapter-Grenze, exakt wie
+bereits `RRULE`, `EXDATE` und `RECURRENCE-ID` seit `event-filtering.md`.
+
 ## Domänenregeln (Invarianten)
 
 ### Validierungsregeln der Wertobjekte
