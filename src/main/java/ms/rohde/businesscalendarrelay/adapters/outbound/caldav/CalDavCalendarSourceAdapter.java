@@ -53,6 +53,7 @@ import net.fortuna.ical4j.model.property.Sequence;
 import net.fortuna.ical4j.model.property.Status;
 import net.fortuna.ical4j.model.property.Transp;
 import net.fortuna.ical4j.model.property.Uid;
+import net.fortuna.ical4j.util.CompatibilityHints;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jspecify.annotations.Nullable;
@@ -97,7 +98,10 @@ import org.xml.sax.SAXException;
  * are dropped, {@code RECURRENCE-ID} overrides replace their series-computed slot with the
  * override's own window, an override itself carrying {@code STATUS:CANCELLED} is dropped
  * entirely, and a {@code STATUS:CANCELLED} master propagates {@code cancelled = true} to
- * every occurrence still emitted for the series rather than dropping the series.
+ * every occurrence still emitted for the series rather than dropping the series. A single
+ * {@code UID} group that turns out to be semantically incomplete (missing {@code UID},
+ * {@code DTSTART}, or {@code DTEND}) is logged and skipped rather than aborting the whole
+ * read -- see {@link #expandAll(List, ZonedDateTime)}.
  *
  * <p>Deliberately not wired as an auto-scanned, no-arg Spring singleton bean: the
  * collection URL, credentials, and {@link CalendarReplicaStore} instance are per-calendar
@@ -143,6 +147,17 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
      * that no real CalDAV calendar could ever have an earlier occurrence.
      */
     private static final ZonedDateTime UNBOUNDED_PAST = ZonedDateTime.of(1, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+
+    static {
+        // Real-world CalDAV exports carry non-RFC-5545-conformant property values on
+        // properties this adapter never reads at all (e.g. a CREATED without the mandatory
+        // trailing "Z", observed from an aging Nextcloud-generated entry). ical4j's strict
+        // parsing aborts CalendarBuilder#build() entirely on any single such value, failing
+        // the whole readEvents() call -- and with it every occurrence in that CalDAV
+        // resource, not just the one malformed property. Relaxed parsing accepts the
+        // non-conformant value instead, verified against exactly this failure mode.
+        CompatibilityHints.setHintEnabled(CompatibilityHints.KEY_RELAXED_PARSING, true);
+    }
 
     private static final String CALENDAR_QUERY_BODY =
             """
@@ -621,16 +636,42 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
      * Groups every parsed {@code VEVENT} by {@code UID} first (a series master and its
      * {@code RECURRENCE-ID} overrides may have arrived from different {@code calendar-data}
      * blobs), then expands each group independently.
+     *
+     * <p>A single UID group that fails to expand (missing {@code UID}, missing {@code
+     * DTSTART}/{@code DTEND}, or {@code RECURRENCE-ID} override(s) without a master) is
+     * logged at {@code WARN} and skipped rather than aborting the whole read -- see {@code
+     * docs/adr/012-skip-malformed-vevent-groups-instead-of-aborting-cycle.md}. This is
+     * deliberately narrower than {@link #parseVEvents(String)}'s all-or-nothing failure
+     * mode: a response that fails to parse as ICS at all, or an unexpected HTTP status,
+     * still aborts the whole {@link #readEvents()} call, since none of that response's data
+     * can be trusted at all -- whereas a structurally valid response containing one
+     * semantically incomplete {@code VEVENT} still yields trustworthy data for every other
+     * {@code VEVENT} in it.
      */
     private List<SourceEvent> expandAll(List<VEvent> allVEvents, ZonedDateTime now) {
         var byUid = new LinkedHashMap<String, List<VEvent>>();
         for (var vevent : allVEvents) {
-            byUid.computeIfAbsent(requireUid(vevent), key -> new ArrayList<>()).add(vevent);
+            String uid;
+            try {
+                uid = requireUid(vevent);
+            } catch (CalDavCalendarSourceException e) {
+                LOG.warn("Skipping unparseable VEVENT from {}: {}", calendarCollectionUri, e.getMessage());
+                continue;
+            }
+            byUid.computeIfAbsent(uid, key -> new ArrayList<>()).add(vevent);
         }
 
         var result = new ArrayList<SourceEvent>();
         for (var entry : byUid.entrySet()) {
-            result.addAll(expandSeries(entry.getKey(), entry.getValue(), now));
+            try {
+                result.addAll(expandSeries(entry.getKey(), entry.getValue(), now));
+            } catch (CalDavCalendarSourceException e) {
+                LOG.warn(
+                        "Skipping unparseable VEVENT UID={} from {}: {}",
+                        entry.getKey(),
+                        calendarCollectionUri,
+                        e.getMessage());
+            }
         }
         return result;
     }

@@ -244,6 +244,21 @@ class CalDavCalendarSourceAdapterTest {
         return icsCalendar(simpleVEvent(uid, dtStartLocal, dtEndLocal));
     }
 
+    private static String vEventWithNonConformantCreatedTimestamp(String uid, String dtStartLocal, String dtEndLocal) {
+        return "BEGIN:VEVENT\n"
+                + "UID:" + uid + "\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                // Missing the mandatory trailing "Z" -- observed on a real, years-old
+                // Nextcloud-generated CREATED value. This adapter never reads CREATED at all,
+                // but ical4j's CalendarBuilder aborts parsing the whole calendar-data blob on
+                // any single malformed property unless relaxed parsing is enabled.
+                + "CREATED:20190927T231807\n"
+                + "DTSTART;TZID=Europe/Berlin:" + dtStartLocal + "\n"
+                + "DTEND;TZID=Europe/Berlin:" + dtEndLocal + "\n"
+                + "SUMMARY:Some private thing\n"
+                + "END:VEVENT\n";
+    }
+
     private static String cleanSingleEventMultiStatus() {
         return multiStatusWithCalendarData(icsWithSingleVEvent("event1-uid", "20260201T100000", "20260201T110000"));
     }
@@ -375,12 +390,73 @@ class CalDavCalendarSourceAdapterTest {
     }
 
     @Test
-    void readEvents_givenVEventMissingDtEnd_thenThrowsCalDavCalendarSourceException() throws IOException {
+    void readEvents_givenVEventWithNonRfc5545ConformantCreatedTimestamp_thenStillParsesInsteadOfThrowing()
+            throws IOException {
+        var ics = icsCalendar(
+                vEventWithNonConformantCreatedTimestamp("legacy-uid", "20260201T100000", "20260201T110000"));
+        var uri = startServer(207, multiStatusWithCalendarData(ics), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "legacy-uid",
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenVEventMissingDtEnd_thenSkipsItAndReturnsEmptyListInsteadOfThrowing() throws IOException {
         var uri = startServer(207, multiStatusWithVEventMissingDtEnd(), null);
 
-        assertThatThrownBy(() -> adapter(uri).readEvents())
-                .isInstanceOf(CalDavCalendarSourceException.class)
-                .hasMessageContaining("no-dtend-uid");
+        var events = adapter(uri).readEvents();
+
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void readEvents_givenOneVEventMissingDtEndAmongOtherwiseValidEvents_thenSkipsOnlyThatOneAndReturnsTheRest()
+            throws IOException {
+        var brokenVEvent = "BEGIN:VEVENT\n"
+                + "UID:no-dtend-uid\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "DTSTART;TZID=Europe/Berlin:20260201T100000\n"
+                + "SUMMARY:Missing DTEND\n"
+                + "END:VEVENT\n";
+        var ics = icsCalendar(
+                brokenVEvent, simpleVEvent("valid-uid", "20260301T090000", "20260301T093000"));
+        var uri = startServer(207, multiStatusWithCalendarData(ics), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "valid-uid",
+                        ZonedDateTime.of(2026, 3, 1, 9, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 3, 1, 9, 30, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenVEventMissingUid_thenSkipsItAndReturnsEmptyListInsteadOfThrowing() throws IOException {
+        var vEventWithoutUid = "BEGIN:VEVENT\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "DTSTART;TZID=Europe/Berlin:20260201T100000\n"
+                + "DTEND;TZID=Europe/Berlin:20260201T110000\n"
+                + "SUMMARY:Missing UID\n"
+                + "END:VEVENT\n";
+        var uri = startServer(207, multiStatusWithCalendarData(icsCalendar(vEventWithoutUid)), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events).isEmpty();
     }
 
     @Test
