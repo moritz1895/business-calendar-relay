@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import java.time.Period;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
@@ -64,41 +65,86 @@ public record RelayProperties(
     }
 
     /**
-     * One configured private source calendar: its CalDAV location and credentials, its
-     * stable persistence key, and the iMIP identity used for every blocker it produces.
+     * One configured private source calendar: its source-protocol location and
+     * credentials, its stable persistence key, and the iMIP identity used for every
+     * blocker it produces.
+     *
+     * <p>{@link #type()} discriminates between the two coexisting source-protocol
+     * families this record can describe -- CalDAV ({@link #caldavUrl()}/
+     * {@link #caldavUsername()}/{@link #caldavPassword()}) or Google Calendar
+     * ({@link #googleCalendarId()}/{@link #googleClientId()}/{@link #googleClientSecret()}/
+     * {@link #googleRefreshToken()}) -- see
+     * {@code docs/features/google-calendar-integration.md}'s Design-Entscheidung 1. It
+     * defaults to {@code CALDAV} so an existing deployment's configuration, written before
+     * this field existed, binds unchanged (Spring Boot's relaxed binding fills in the
+     * default whenever the {@code type} key is absent) -- the zero-config-migration
+     * requirement that spec is built around. Neither the CalDAV-specific nor the
+     * Google-specific fields carry {@code @NotBlank} any more: which set is mandatory
+     * depends on {@link #type()}, expressed instead by the class-level
+     * {@link ConsistentCalendarSourceFields} constraint below.
      *
      * @param id stable identifier for this calendar, used as {@code JpaStateStoreAdapter}'s
      *     {@code sourceCalendarId} persistence key. Must never be renamed once events
      *     have been relayed under it -- see {@code README.md}.
-     * @param caldavUrl CalDAV calendar collection URL this entry reads events from
-     * @param caldavUsername Basic-auth username for {@code caldavUrl}
-     * @param caldavPassword Basic-auth password for {@code caldavUrl}
+     * @param type which source-protocol family this entry describes. Defaults to
+     *     {@code CALDAV}.
+     * @param caldavUrl CalDAV calendar collection URL this entry reads events from.
+     *     Required only when {@link #type()} is {@code CALDAV}.
+     * @param caldavUsername Basic-auth username for {@code caldavUrl}. Required only when
+     *     {@link #type()} is {@code CALDAV}.
+     * @param caldavPassword Basic-auth password for {@code caldavUrl}. Required only when
+     *     {@link #type()} is {@code CALDAV}.
+     * @param googleCalendarId Google Calendar identifier {@code GoogleCalendarSourceAdapter}
+     *     reads events from. Required only when {@link #type()} is {@code GOOGLE}.
+     * @param googleClientId the deployer's own OAuth 2.0 client id, from a Google Cloud
+     *     project the deployer owns. Required only when {@link #type()} is {@code GOOGLE}.
+     * @param googleClientSecret the deployer's own OAuth 2.0 client secret, paired with
+     *     {@link #googleClientId()}. Required only when {@link #type()} is {@code GOOGLE}.
+     * @param googleRefreshToken the long-lived refresh token obtained once via the OAuth
+     *     Playground consent flow, exchanged for a short-lived access token on every poll
+     *     cycle -- treated exactly like a CalDAV password: never rewritten at runtime.
+     *     Required only when {@link #type()} is {@code GOOGLE}.
      * @param organizerEmail organizer address set on every blocker built from this calendar
      * @param attendeeEmail business Outlook mailbox address the iMIP mail is sent to
      * @param fromAddress {@code From}/envelope-from of the iMIP mail
      * @param replyToAddress {@code Reply-To} of the iMIP mail, typically the organizer's
      *     human address
-     * @param deltaSyncEnabled whether {@code CalDavCalendarSourceAdapter} may use RFC 6578
-     *     {@code sync-collection} delta sync for this calendar (see
-     *     {@code docs/features/delta-sync.md}). A per-calendar, not global, field --
-     *     whether {@code sync-collection} works is a server capability that legitimately
-     *     differs between providers, unlike {@link #recurringEventHorizon()} or
-     *     {@link #initialization()}, which are fachlich policies applied uniformly.
-     *     Defaults to {@code true}; a CalDAV server that does not support
-     *     {@code sync-collection} is already detected automatically and falls back to the
-     *     legacy {@code calendar-query} request on its own -- this flag is a manual
-     *     override for the rarer case where the automatic detection itself
-     *     misbehaves against a specific server.
+     * @param deltaSyncEnabled whether the configured source adapter may use its
+     *     protocol-specific delta-sync mechanism for this calendar (RFC 6578
+     *     {@code sync-collection} for CalDAV, {@code syncToken}-based {@code events.list}
+     *     for Google -- see {@code docs/features/delta-sync.md} and
+     *     {@code docs/features/google-calendar-integration.md}). A per-calendar, not
+     *     global, field, shared verbatim across both types: the "kill switch, falls back
+     *     to an always-full read" semantics is identical for both, only the concrete
+     *     fallback mechanism differs adapter-internally. Defaults to {@code true}; a
+     *     CalDAV server that does not support {@code sync-collection} is already detected
+     *     automatically and falls back to the legacy {@code calendar-query} request on its
+     *     own -- this flag is a manual override for the rarer case where the automatic
+     *     detection itself misbehaves against a specific server.
      */
+    @ConsistentCalendarSourceFields
     public record CalendarConfig(
             @NotBlank String id,
-            @NotBlank String caldavUrl,
-            @NotBlank String caldavUsername,
-            @NotBlank String caldavPassword,
+            @NotNull @DefaultValue("caldav") CalendarSourceType type,
+            @Nullable String caldavUrl,
+            @Nullable String caldavUsername,
+            @Nullable String caldavPassword,
+            @Nullable String googleCalendarId,
+            @Nullable String googleClientId,
+            @Nullable String googleClientSecret,
+            @Nullable String googleRefreshToken,
             @NotBlank String organizerEmail,
             @NotBlank String attendeeEmail,
             @NotBlank String fromAddress,
             @NotBlank String replyToAddress,
             @DefaultValue("true") boolean deltaSyncEnabled) {
+
+        /**
+         * The two coexisting source-protocol families a {@link CalendarConfig} entry can
+         * describe -- see {@code docs/features/google-calendar-integration.md}.
+         */
+        public enum CalendarSourceType {
+            CALDAV, GOOGLE
+        }
     }
 }
