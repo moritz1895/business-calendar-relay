@@ -6,9 +6,13 @@ import java.time.Clock;
 import java.time.Period;
 import java.util.List;
 import ms.rohde.businesscalendarrelay.adapters.outbound.caldav.CalDavCalendarSourceAdapter;
+import ms.rohde.businesscalendarrelay.adapters.outbound.google.GoogleCalendarSourceAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarReplicaResourceJpaRepository;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarSyncTokenJpaRepository;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.GoogleCalendarReplicaResourceJpaRepository;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.GoogleCalendarSyncTokenJpaRepository;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaCalendarReplicaStoreAdapter;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaGoogleCalendarReplicaStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaPendingCreationQueueAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaStateStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.PendingCreationJpaRepository;
@@ -18,6 +22,7 @@ import ms.rohde.businesscalendarrelay.core.app.PollAndRelaySourceCalendarService
 import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BurstBudget;
+import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,20 +32,27 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Builds one {@link PollAndRelaySourceCalendarUseCase} per calendar declared in
- * {@link RelayProperties#calendars()}, wiring each one's own
- * {@link CalDavCalendarSourceAdapter}, {@link JpaStateStoreAdapter}, and
- * {@link JpaPendingCreationQueueAdapter} by hand rather than through Spring dependency
- * injection -- all three constructors take per-calendar configuration values that no bean
- * of the right type exists for.
+ * {@link RelayProperties#calendars()}, wiring each one's own {@link CalendarSource}
+ * adapter (either {@link CalDavCalendarSourceAdapter} or {@link GoogleCalendarSourceAdapter},
+ * chosen by {@link RelayProperties.CalendarConfig#type()} -- see {@link #buildUseCase}),
+ * {@link JpaStateStoreAdapter}, and {@link JpaPendingCreationQueueAdapter} by hand rather
+ * than through Spring dependency injection -- all of these constructors take per-calendar
+ * configuration values that no bean of the right type exists for.
  *
  * <p>Every use-case instance shares one {@link HttpClient}, one {@link Clock}, one
  * {@link BlockerSink} bean (the SMTP adapter, which has no per-calendar state), one
  * {@link RelayStateJpaRepository}, one {@link PendingCreationJpaRepository}, one
- * {@link CalendarReplicaResourceJpaRepository}, one {@link CalendarSyncTokenJpaRepository},
- * and one {@link BurstBudget} bean (the mailbox-wide send budget, shared across every
- * calendar -- see {@code docs/features/burst-filter-initialization.md}, issue #16). See
- * {@link PerCalendarComponentBeanDefinitionPruner} for why {@code @ArchComponentScan}
- * does not also try to register these per-calendar classes as eager Spring singletons.
+ * {@link CalendarReplicaResourceJpaRepository}/{@link CalendarSyncTokenJpaRepository} pair
+ * (CalDAV replica), one {@link GoogleCalendarReplicaResourceJpaRepository}/
+ * {@link GoogleCalendarSyncTokenJpaRepository} pair (Google replica -- see
+ * {@code docs/features/google-calendar-integration.md}), and one {@link BurstBudget} bean
+ * (the mailbox-wide send budget, shared across every calendar -- see
+ * {@code docs/features/burst-filter-initialization.md}, issue #16). The single shared
+ * {@link HttpClient} bean is deliberately reused for both CalDAV and Google traffic --
+ * {@code java.net.http.HttpClient} is already protocol-agnostic, so no second bean is
+ * warranted. See {@link PerCalendarComponentBeanDefinitionPruner} for why
+ * {@code @ArchComponentScan} does not also try to register these per-calendar classes as
+ * eager Spring singletons.
  */
 @Configuration
 @EnableConfigurationProperties(RelayProperties.class)
@@ -83,6 +95,8 @@ public class RelayWiringConfiguration {
             PendingCreationJpaRepository pendingCreationJpaRepository,
             CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
             CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
+            GoogleCalendarReplicaResourceJpaRepository googleCalendarReplicaResourceJpaRepository,
+            GoogleCalendarSyncTokenJpaRepository googleCalendarSyncTokenJpaRepository,
             BurstBudget relayBurstBudget,
             PlatformTransactionManager transactionManager) {
         return buildUseCases(
@@ -94,6 +108,8 @@ public class RelayWiringConfiguration {
                 pendingCreationJpaRepository,
                 calendarReplicaResourceJpaRepository,
                 calendarSyncTokenJpaRepository,
+                googleCalendarReplicaResourceJpaRepository,
+                googleCalendarSyncTokenJpaRepository,
                 relayBurstBudget,
                 transactionManager);
     }
@@ -111,6 +127,8 @@ public class RelayWiringConfiguration {
             PendingCreationJpaRepository pendingCreationJpaRepository,
             CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
             CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
+            GoogleCalendarReplicaResourceJpaRepository googleCalendarReplicaResourceJpaRepository,
+            GoogleCalendarSyncTokenJpaRepository googleCalendarSyncTokenJpaRepository,
             BurstBudget burstBudget,
             PlatformTransactionManager transactionManager) {
         var recurringEventHorizon = relayProperties.recurringEventHorizon();
@@ -124,6 +142,8 @@ public class RelayWiringConfiguration {
                         pendingCreationJpaRepository,
                         calendarReplicaResourceJpaRepository,
                         calendarSyncTokenJpaRepository,
+                        googleCalendarReplicaResourceJpaRepository,
+                        googleCalendarSyncTokenJpaRepository,
                         burstBudget,
                         recurringEventHorizon,
                         transactionManager))
@@ -139,23 +159,29 @@ public class RelayWiringConfiguration {
             PendingCreationJpaRepository pendingCreationJpaRepository,
             CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
             CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
+            GoogleCalendarReplicaResourceJpaRepository googleCalendarReplicaResourceJpaRepository,
+            GoogleCalendarSyncTokenJpaRepository googleCalendarSyncTokenJpaRepository,
             BurstBudget burstBudget,
             Period recurringEventHorizon,
             PlatformTransactionManager transactionManager) {
-        var calendarReplicaStore = new JpaCalendarReplicaStoreAdapter(
-                calendarReplicaResourceJpaRepository,
-                calendarSyncTokenJpaRepository,
-                calendar.id(),
-                transactionManager);
-        var calendarSource = new CalDavCalendarSourceAdapter(
-                httpClient,
-                URI.create(calendar.caldavUrl()),
-                calendar.caldavUsername(),
-                calendar.caldavPassword(),
-                clock,
-                recurringEventHorizon,
-                calendarReplicaStore,
-                calendar.deltaSyncEnabled());
+        CalendarSource calendarSource = switch (calendar.type()) {
+            case CALDAV -> buildCalDavCalendarSource(
+                    calendar,
+                    httpClient,
+                    clock,
+                    recurringEventHorizon,
+                    calendarReplicaResourceJpaRepository,
+                    calendarSyncTokenJpaRepository,
+                    transactionManager);
+            case GOOGLE -> buildGoogleCalendarSource(
+                    calendar,
+                    httpClient,
+                    clock,
+                    recurringEventHorizon,
+                    googleCalendarReplicaResourceJpaRepository,
+                    googleCalendarSyncTokenJpaRepository,
+                    transactionManager);
+        };
         var stateStore = new JpaStateStoreAdapter(relayStateJpaRepository, calendar.id());
         var pendingCreationQueue = new JpaPendingCreationQueueAdapter(pendingCreationJpaRepository, calendar.id());
 
@@ -171,5 +197,54 @@ public class RelayWiringConfiguration {
                 calendar.replyToAddress(),
                 clock,
                 recurringEventHorizon);
+    }
+
+    private static CalDavCalendarSourceAdapter buildCalDavCalendarSource(
+            RelayProperties.CalendarConfig calendar,
+            HttpClient httpClient,
+            Clock clock,
+            Period recurringEventHorizon,
+            CalendarReplicaResourceJpaRepository calendarReplicaResourceJpaRepository,
+            CalendarSyncTokenJpaRepository calendarSyncTokenJpaRepository,
+            PlatformTransactionManager transactionManager) {
+        var calendarReplicaStore = new JpaCalendarReplicaStoreAdapter(
+                calendarReplicaResourceJpaRepository,
+                calendarSyncTokenJpaRepository,
+                calendar.id(),
+                transactionManager);
+        return new CalDavCalendarSourceAdapter(
+                httpClient,
+                URI.create(calendar.caldavUrl()),
+                calendar.caldavUsername(),
+                calendar.caldavPassword(),
+                clock,
+                recurringEventHorizon,
+                calendarReplicaStore,
+                calendar.deltaSyncEnabled());
+    }
+
+    private static GoogleCalendarSourceAdapter buildGoogleCalendarSource(
+            RelayProperties.CalendarConfig calendar,
+            HttpClient httpClient,
+            Clock clock,
+            Period recurringEventHorizon,
+            GoogleCalendarReplicaResourceJpaRepository googleCalendarReplicaResourceJpaRepository,
+            GoogleCalendarSyncTokenJpaRepository googleCalendarSyncTokenJpaRepository,
+            PlatformTransactionManager transactionManager) {
+        var googleCalendarReplicaStore = new JpaGoogleCalendarReplicaStoreAdapter(
+                googleCalendarReplicaResourceJpaRepository,
+                googleCalendarSyncTokenJpaRepository,
+                calendar.id(),
+                transactionManager);
+        return new GoogleCalendarSourceAdapter(
+                httpClient,
+                calendar.googleCalendarId(),
+                calendar.googleClientId(),
+                calendar.googleClientSecret(),
+                calendar.googleRefreshToken(),
+                clock,
+                recurringEventHorizon,
+                googleCalendarReplicaStore,
+                calendar.deltaSyncEnabled());
     }
 }
