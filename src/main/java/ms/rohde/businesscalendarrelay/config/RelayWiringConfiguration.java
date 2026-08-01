@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Period;
 import java.util.List;
+import java.util.Objects;
 import ms.rohde.businesscalendarrelay.adapters.outbound.caldav.CalDavCalendarSourceAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.google.GoogleCalendarSourceAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.CalendarReplicaResourceJpaRepository;
@@ -212,11 +213,15 @@ public class RelayWiringConfiguration {
                 calendarSyncTokenJpaRepository,
                 calendar.id(),
                 transactionManager);
+        // @ConsistentCalendarSourceFields has already rejected any CALDAV entry with a blank
+        // caldavUrl/caldavUsername/caldavPassword during Spring Boot property binding, so these
+        // @Nullable fields are guaranteed non-null here -- requireNonNull documents that invariant
+        // at the point it's relied upon rather than leaving it implicit.
         return new CalDavCalendarSourceAdapter(
                 httpClient,
-                URI.create(calendar.caldavUrl()),
-                calendar.caldavUsername(),
-                calendar.caldavPassword(),
+                URI.create(Objects.requireNonNull(calendar.caldavUrl())),
+                Objects.requireNonNull(calendar.caldavUsername()),
+                Objects.requireNonNull(calendar.caldavPassword()),
                 clock,
                 recurringEventHorizon,
                 calendarReplicaStore,
@@ -236,12 +241,16 @@ public class RelayWiringConfiguration {
                 googleCalendarSyncTokenJpaRepository,
                 calendar.id(),
                 transactionManager);
+        // @ConsistentCalendarSourceFields has already rejected any GOOGLE entry with a blank
+        // googleCalendarId/googleClientId/googleClientSecret/googleRefreshToken during Spring
+        // Boot property binding, so these @Nullable fields are guaranteed non-null here --
+        // requireNonNull documents that invariant at the point it's relied upon.
         return new GoogleCalendarSourceAdapter(
                 httpClient,
-                calendar.googleCalendarId(),
-                calendar.googleClientId(),
-                calendar.googleClientSecret(),
-                calendar.googleRefreshToken(),
+                Objects.requireNonNull(calendar.googleCalendarId()),
+                Objects.requireNonNull(calendar.googleClientId()),
+                Objects.requireNonNull(calendar.googleClientSecret()),
+                Objects.requireNonNull(calendar.googleRefreshToken()),
                 clock,
                 recurringEventHorizon,
                 googleCalendarReplicaStore,
