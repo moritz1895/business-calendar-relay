@@ -28,3 +28,18 @@ relay:
     #   attendee-email: ${RELAY_WORK_ATTENDEE_EMAIL}
     #   from-address: ${RELAY_WORK_FROM_ADDRESS}
     #   reply-to-address: ${RELAY_WORK_REPLY_TO_ADDRESS}
+
+    # A Google Calendar source coexisting with the CalDAV entries above -- `type: google`
+    # is the only thing that distinguishes it. Credentials come from a Google Cloud
+    # project you create yourself; see docs/technical/google-calendar-setup.md for the
+    # one-time OAuth Playground consent flow that produces google-refresh-token.
+    # - id: personal-google
+    #   type: google
+    #   google-calendar-id: ${GOOGLE_PERSONAL_CALENDAR_ID}
+    #   google-client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
+    #   google-client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
+    #   google-refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
+    #   organizer-email: ${RELAY_GOOGLE_ORGANIZER_EMAIL}
+    #   attendee-email: ${RELAY_GOOGLE_ATTENDEE_EMAIL}
+    #   from-address: ${RELAY_GOOGLE_FROM_ADDRESS}
+    #   reply-to-address: ${RELAY_GOOGLE_REPLY_TO_ADDRESS}

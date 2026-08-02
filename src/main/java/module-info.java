@@ -21,4 +21,5 @@ open module ms.rohde.businesscalendarrelay {
     requires java.xml;
     requires ical4j.core;
     requires jdk.httpserver;
+    requires tools.jackson.databind;
 }

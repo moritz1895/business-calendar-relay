@@ -48,6 +48,16 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
   komplette Kalender-Collection erneut anzufordern; automatischer Fallback
   auf die vollständige RFC-4791-`calendar-query`-Anfrage, sobald ein Server
   `sync-collection` nicht unterstützt oder ein Sync-Token ungültig wird.
+- **Google Calendar als zweiter, gleichberechtigt koexistierender
+  Quellkalender-Typ** (`type: google`): pro `relay.calendars[]`-Eintrag
+  wählbar, unabhängig von jedem CalDAV-Eintrag im selben Deployment gepollt.
+  Liest Termine über die Google Calendar REST API v3 (`events.list`,
+  `singleEvents=true` für serverseitig bereits expandierte
+  Wiederholungs-Vorkommen), inkrementelle `syncToken`-Synchronisation nach
+  demselben Muster wie der CalDAV-Delta-Sync, OAuth-2.0-Access-Token-Erneuerung
+  aus einem einmalig beschafften, langlebigen Refresh-Token. Ein bestehendes
+  Deployment ohne `type`-Feld ist davon unberührt (Default `caldav`) --
+  siehe [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md).
 
 ## Tech-Stack
 
@@ -56,7 +66,7 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 | Sprache/Laufzeit | Java 25 |
 | Anwendungs-Framework | Spring Boot 4.0.x (Scheduling, `@ConfigurationProperties`, Actuator) |
 | Architektur | Hexagonal Architecture (`ms.rohde:hexagonal-arch-*`) |
-| Quellkalender-Zugriff | CalDAV via `java.net.http.HttpClient` — Standardweg ist RFC 6578 `sync-collection` REPORT mit persistiertem Sync-Token (Delta-Sync), automatischer Fallback auf die vollständige RFC 4791 `calendar-query` REPORT bei fehlender Serverunterstützung oder `delta-sync-enabled: false`; ICS-Parsing mit `ical4j` |
+| Quellkalender-Zugriff | CalDAV via `java.net.http.HttpClient` — Standardweg ist RFC 6578 `sync-collection` REPORT mit persistiertem Sync-Token (Delta-Sync), automatischer Fallback auf die vollständige RFC 4791 `calendar-query` REPORT bei fehlender Serverunterstützung oder `delta-sync-enabled: false`; ICS-Parsing mit `ical4j`. Alternativ Google Calendar REST API v3 via `java.net.http.HttpClient` + Jackson (`type: google`), koexistierend im selben Deployment. |
 | iMIP/E-Mail-Versand | SMTP via Spring `JavaMailSender` (Jakarta Mail) |
 | Persistenz | Spring Data JPA gegen eingebettetes H2 im Dateimodus |
 | Logging | Log4j2 |
@@ -117,6 +127,22 @@ Drei Features sind auf dieser Basis inzwischen produktiv umgesetzt:
   `CalendarSource`-Vertrag ("immer ein vollständiger Snapshot") bleibt dabei
   unverändert — siehe
   [`docs/features/delta-sync.md`](docs/features/delta-sync.md).
+- **Google Calendar als zweiter, koexistierender Quellkalender-Typ**: Ein
+  `relay.calendars[]`-Eintrag mit `type: google` liest Termine über die
+  Google Calendar REST API v3 (`GoogleCalendarSourceAdapter`,
+  `events.list` mit `singleEvents=true`) statt über CalDAV, unabhängig
+  gepollt neben jedem CalDAV-Eintrag im selben Deployment. Inkrementelle
+  Synchronisation über einen persistierten `syncToken`
+  (`GoogleCalendarReplicaStore`/`JpaGoogleCalendarReplicaStoreAdapter`,
+  strukturell parallel zu `CalendarReplicaStore`) plus ein zusätzlicher,
+  horizon-begrenzter Ergänzungs-Fetch, der rein zeitbedingt neu ins Fenster
+  gerutschte Vorkommen langlaufender wiederkehrender Serien erfasst. OAuth
+  2.0: ein einmalig vom Deployer beschaffter, langlebiger Refresh-Token wird
+  zur Laufzeit ausschließlich gegen kurzlebige Access-Token getauscht (In-Memory
+  gecacht), kein interaktiver Consent-Flow in der laufenden Anwendung. Ein
+  bestehendes Deployment ohne `type`-Feld ist unverändert weiterhin CalDAV
+  (Zero-Config-Migration) — siehe
+  [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md).
 
 **Noch nicht umgesetzt, nur entworfen:** Replica Retirement (periodisches
 Aufräumen alter `CalendarReplicaStore`-/`RelayState`-Einträge) liegt als
@@ -166,6 +192,9 @@ relay:
   recurring-event-horizon: P6M
   calendars:
     - id: personal-nextcloud
+      # type: caldav   -- optional, das ist ohnehin der Default; bestehende
+      # Deployments ohne dieses Feld sind von der Google-Calendar-Integration
+      # unberührt (Zero-Config-Migration)
       caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
       caldav-username: ${CALDAV_PERSONAL_USERNAME}
       caldav-password: ${CALDAV_PERSONAL_PASSWORD}
@@ -173,20 +202,39 @@ relay:
       attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
       from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
       reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
+    - id: personal-google
+      type: google
+      google-calendar-id: ${GOOGLE_PERSONAL_CALENDAR_ID}
+      google-client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
+      google-client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
+      google-refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
+      organizer-email: ${RELAY_GOOGLE_ORGANIZER_EMAIL}
+      attendee-email: ${RELAY_GOOGLE_ATTENDEE_EMAIL}
+      from-address: ${RELAY_GOOGLE_FROM_ADDRESS}
+      reply-to-address: ${RELAY_GOOGLE_REPLY_TO_ADDRESS}
 ```
+
+Beide Einträge werden vom selben `PollAndRelaySchedulerAdapter` unabhängig
+im konfigurierten `relay.poll-interval` gepollt — ein CalDAV- und ein
+Google-Eintrag koexistieren im selben Deployment, jeder mit eigener
+Relay-Historie.
 
 Jeder Eintrag in `relay.calendars`:
 
 | Feld | Beschreibung |
 |---|---|
 | `id` | Eindeutiger Bezeichner dieses Kalenders. Dient `StateStore` als Persistenz-Schlüssel (`sourceCalendarId`) — **darf nach dem ersten Relay-Lauf niemals umbenannt werden**, sonst verliert die Anwendung die Zuordnung zu allen bereits gespiegelten Terminen dieses Kalenders und behandelt sie beim nächsten Poll fälschlich als neu. |
-| `caldav-url` | CalDAV-Collection-URL des Quellkalenders |
-| `caldav-username`, `caldav-password` | Basic-Auth-Zugangsdaten für `caldav-url` — nur über Umgebungsvariablen, nie im Klartext einchecken |
+| `type` | `caldav` (Default) oder `google`. Fehlt das Feld, bindet Spring Boot automatisch auf `caldav` — Zero-Config-Migration für jedes bestehende Deployment. |
+| `caldav-url` | CalDAV-Collection-URL des Quellkalenders. Pflicht nur bei `type: caldav`. |
+| `caldav-username`, `caldav-password` | Basic-Auth-Zugangsdaten für `caldav-url` — nur über Umgebungsvariablen, nie im Klartext einchecken. Pflicht nur bei `type: caldav`. |
+| `google-calendar-id` | Google-Kalender-ID (bei einem persönlichen Konto meist die Gmail-Adresse selbst, oder eine über Google Calendars "Kalender integrieren"-Einstellungsseite ermittelte ID für einen sekundären Kalender). Pflicht nur bei `type: google`. |
+| `google-client-id`, `google-client-secret` | Die vom Deployer selbst in der Google Cloud Console angelegten OAuth-2.0-Client-Credentials — siehe [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md) für den einmaligen Einrichtungsschritt. Pflicht nur bei `type: google`. |
+| `google-refresh-token` | Der einmalig per OAuth-Playground-Consent beschaffte, langlebige Refresh-Token — wie ein CalDAV-Passwort ausschließlich über eine Umgebungsvariable, nie im Klartext eingecheckt. Pflicht nur bei `type: google`. |
 | `organizer-email` | Organizer-Adresse, die auf jeden erzeugten Blocker gesetzt wird |
 | `attendee-email` | Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail geht |
 | `from-address` | `From`/Envelope-From der iMIP-Mail |
 | `reply-to-address` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) |
-| `delta-sync-enabled` | Ob `CalDavCalendarSourceAdapter` für diesen Kalender RFC-6578-`sync-collection`-Delta-Sync verwenden darf (siehe [`docs/features/delta-sync.md`](docs/features/delta-sync.md)). Ein Server, der `sync-collection` nicht unterstützt, wird bereits automatisch erkannt und fällt selbstständig auf `calendar-query` zurück — dieses Feld ist ein manueller Notausschalter für den selteneren Fall, dass diese automatische Erkennung selbst nicht wie erwartet funktioniert. Optional, Default `true`. |
+| `delta-sync-enabled` | Ob der konfigurierte Adapter für diesen Kalender seinen protokollspezifischen Delta-Sync-Mechanismus verwenden darf (RFC-6578-`sync-collection` bei CalDAV, `syncToken`-basiert bei Google — siehe [`docs/features/delta-sync.md`](docs/features/delta-sync.md) und [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md)). Bei CalDAV wird ein Server, der `sync-collection` nicht unterstützt, bereits automatisch erkannt und fällt selbstständig auf `calendar-query` zurück — dieses Feld ist dort ein manueller Notausschalter für den selteneren Fall, dass diese automatische Erkennung selbst nicht wie erwartet funktioniert. Optional, Default `true`. |
 
 Jedes Feld ist pro Kalender konfigurierbar — für eine einheitliche Identität
 über alle Kalender hinweg genügt es, denselben Wert in jedem Eintrag zu
@@ -219,6 +267,17 @@ Details zum Schema stehen in
 [`docs/technical/database.md`](docs/technical/database.md) und
 [`docs/technical/caldav.md`](docs/technical/caldav.md).
 
+`GoogleCalendarReplicaStore` (die lokale Replik der rohen Google-Calendar-
+Event-JSONs plus Sync-Token, die `GoogleCalendarSourceAdapter`s Delta-Sync
+trägt, siehe
+[`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md))
+folgt demselben Muster in zwei eigenen Tabellen:
+`google_calendar_replica_event` (rohes Event-JSON und ETag pro
+Google-`eventId`) und `google_calendar_sync_token` (ein Sync-Token pro
+Kalender), über `JpaGoogleCalendarReplicaStoreAdapter` und die geteilten
+Repositories `GoogleCalendarReplicaResourceJpaRepository`/
+`GoogleCalendarSyncTokenJpaRepository`.
+
 ## Scheduler
 
 `PollAndRelaySchedulerAdapter` ist der einzige Akteur, der die
@@ -247,6 +306,7 @@ Dokumentation liegt unter `docs/`:
 | [`docs/features/event-filtering.md`](docs/features/event-filtering.md) | Vorab-Spezifikation (Forward-Mode) der Event-Filterung für das initiale Handling großer Kalenderhistorien (Issue #3) — Erstellungs-Filter, zusammengesetzter `sourceUid` für wiederkehrende Termine, erweiterte Änderungserkennung. Vollständig umgesetzt; `docs/domain.md` und `docs/use-cases.md` fassen das Ergebnis zusammen. |
 | [`docs/features/burst-filter-initialization.md`](docs/features/burst-filter-initialization.md) | Vorab-Spezifikation (Forward-Mode) des Burst-Filters für die Erstinitialisierung eines Quellkalenders (Issue #16) — Rückstands-Warteschlange, postfachweites Sendebudget. Vollständig umgesetzt. |
 | [`docs/features/delta-sync.md`](docs/features/delta-sync.md) | Vorab-Spezifikation (Forward-Mode) des CalDAV-Delta-Syncs via `sync-collection` (RFC 6578) — Sync-Token, lokale Ressourcen-Replik, Fallback-/Full-Resync-Verhalten. Vollständig umgesetzt. |
+| [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md) | Vorab-Spezifikation (Forward-Mode) von Google Calendar als zweitem, koexistierendem Quellkalender-Typ — Konfigurationsschema, OAuth-Token-Lebenszyklus, `singleEvents=true`-Rekursionsauflösung, dedizierter `GoogleCalendarReplicaStore`-Port. Vollständig umgesetzt. |
 | [`docs/features/replica-retirement.md`](docs/features/replica-retirement.md) | Entwurf (Forward-Mode) für ein periodisches Aufräumen alter `CalendarReplicaStore`-/`RelayState`-Einträge. **Nicht umgesetzt** — bewusst nur als fertiges Design geparkt, da die heutige Speicherlast vernachlässigbar ist. |
 | [`docs/reference/`](docs/reference/) | Anonymisierte, mit Outlook verifizierte iMIP-Referenz-Mails (`.eml`), die die strukturellen Anforderungen an die generierten Nachrichten belegen. |
 

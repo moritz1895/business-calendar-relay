@@ -3,8 +3,10 @@ package ms.rohde.businesscalendarrelay.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ms.rohde.businesscalendarrelay.adapters.outbound.caldav.CalDavCalendarSourceAdapter;
+import ms.rohde.businesscalendarrelay.adapters.outbound.google.GoogleCalendarSourceAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.mail.SmtpBlockerSinkAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaCalendarReplicaStoreAdapter;
+import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaGoogleCalendarReplicaStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaPendingCreationQueueAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.JpaStateStoreAdapter;
 import ms.rohde.businesscalendarrelay.adapters.outbound.throttling.InMemoryBurstBudgetAdapter;
@@ -33,7 +35,12 @@ class PerCalendarComponentBeanDefinitionPrunerTest {
         registry.registerBeanDefinition(
                 "jpaCalendarReplicaStoreAdapter", new RootBeanDefinition(JpaCalendarReplicaStoreAdapter.class));
         registry.registerBeanDefinition(
+                "jpaGoogleCalendarReplicaStoreAdapter",
+                new RootBeanDefinition(JpaGoogleCalendarReplicaStoreAdapter.class));
+        registry.registerBeanDefinition(
                 "calDavCalendarSourceAdapter", new RootBeanDefinition(CalDavCalendarSourceAdapter.class));
+        registry.registerBeanDefinition(
+                "googleCalendarSourceAdapter", new RootBeanDefinition(GoogleCalendarSourceAdapter.class));
         registry.registerBeanDefinition(
                 "inMemoryBurstBudgetAdapter", new RootBeanDefinition(InMemoryBurstBudgetAdapter.class));
         registry.registerBeanDefinition("smtpBlockerSinkAdapter", new RootBeanDefinition(SmtpBlockerSinkAdapter.class));

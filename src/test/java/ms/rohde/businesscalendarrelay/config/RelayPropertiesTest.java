@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Period;
 import java.util.List;
 import java.util.Map;
+import ms.rohde.businesscalendarrelay.config.RelayProperties.CalendarConfig.CalendarSourceType;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -88,5 +89,70 @@ class RelayPropertiesTest {
         var relayProperties = new RelayProperties(Duration.ofMinutes(5), List.of(), Period.ofMonths(6), null);
 
         assertThat(relayProperties.initialization()).isEqualTo(DEFAULT_INITIALIZATION);
+    }
+
+    /**
+     * Pins the zero-config-migration guarantee at the heart of
+     * {@code docs/features/google-calendar-integration.md}'s Design-Entscheidung 1: a
+     * {@code relay.calendars[]} entry written before {@code type} existed -- carrying only
+     * CalDAV fields -- must bind exactly as it did before this feature, defaulting {@code
+     * type} to {@code CALDAV}.
+     */
+    @Test
+    void bind_givenCalendarEntryWithoutTypeField_thenDefaultsToCaldav() {
+        var source = new MapConfigurationPropertySource(Map.of(
+                "relay.poll-interval",
+                "5m",
+                "relay.calendars[0].id",
+                "personal-nextcloud",
+                "relay.calendars[0].caldav-url",
+                "https://cloud.example.com/calendars/personal/",
+                "relay.calendars[0].caldav-username",
+                "user",
+                "relay.calendars[0].caldav-password",
+                "password",
+                "relay.calendars[0].organizer-email",
+                "organizer@example.com",
+                "relay.calendars[0].attendee-email",
+                "business@example.com",
+                "relay.calendars[0].from-address",
+                "relay@example.com",
+                "relay.calendars[0].reply-to-address",
+                "organizer@example.com"));
+        var binder = new Binder(source);
+
+        var relayProperties = binder.bind("relay", RelayProperties.class)
+                .orElseThrow(() -> new IllegalStateException("relay properties failed to bind"));
+
+        assertThat(relayProperties.calendars()).singleElement().satisfies(
+                calendar -> assertThat(calendar.type()).isEqualTo(CalendarSourceType.CALDAV));
+    }
+
+    @Test
+    void bind_givenCalendarEntryWithTypeGoogle_thenBindsGoogleTypeAndFields() {
+        var source = new MapConfigurationPropertySource(Map.ofEntries(
+                Map.entry("relay.poll-interval", "5m"),
+                Map.entry("relay.calendars[0].id", "personal-google"),
+                Map.entry("relay.calendars[0].type", "google"),
+                Map.entry("relay.calendars[0].google-calendar-id", "someone@gmail.com"),
+                Map.entry("relay.calendars[0].google-client-id", "client-id"),
+                Map.entry("relay.calendars[0].google-client-secret", "client-secret"),
+                Map.entry("relay.calendars[0].google-refresh-token", "refresh-token"),
+                Map.entry("relay.calendars[0].organizer-email", "organizer@example.com"),
+                Map.entry("relay.calendars[0].attendee-email", "business@example.com"),
+                Map.entry("relay.calendars[0].from-address", "relay@example.com"),
+                Map.entry("relay.calendars[0].reply-to-address", "organizer@example.com")));
+        var binder = new Binder(source);
+
+        var relayProperties = binder.bind("relay", RelayProperties.class)
+                .orElseThrow(() -> new IllegalStateException("relay properties failed to bind"));
+
+        assertThat(relayProperties.calendars()).singleElement().satisfies(calendar -> {
+            assertThat(calendar.type()).isEqualTo(CalendarSourceType.GOOGLE);
+            assertThat(calendar.googleCalendarId()).isEqualTo("someone@gmail.com");
+            assertThat(calendar.googleClientId()).isEqualTo("client-id");
+            assertThat(calendar.googleClientSecret()).isEqualTo("client-secret");
+            assertThat(calendar.googleRefreshToken()).isEqualTo("refresh-token");
+        });
     }
 }
