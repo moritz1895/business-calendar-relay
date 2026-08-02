@@ -173,6 +173,10 @@ für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 | `RELAY_RECURRING_EVENT_HORIZON` | Wie weit ein Vorkommen eines wiederkehrenden Quelltermins in der Zukunft liegen darf, um noch erstmals als Blocker angelegt zu werden — gilt **einheitlich** für jeden konfigurierten Quellkalender (ISO-8601-`Period`-Syntax, z. B. `P6M`, `P90D`). Einzeltermine sind davon nicht betroffen, siehe [`docs/domain.md`](docs/domain.md). | `P6M` |
 | `RELAY_INITIALIZATION_BURST_SIZE` | Wie viele Erstanlagen pro `RELAY_INITIALIZATION_BURST_INTERVAL` beim einmaligen Initialisieren eines Quellkalenders (Issue #16, Anti-Spam-Schutz fürs Business-Postfach) höchstens verschickt werden dürfen — **postfachweit**, über alle konfigurierten Quellkalender zusammengerechnet, keine Pro-Kalender-Einstellung. Wirkt ausschließlich auf die einmalige Erstinitialisierung, siehe [`docs/features/burst-filter-initialization.md`](docs/features/burst-filter-initialization.md). | `5` |
 | `RELAY_INITIALIZATION_BURST_INTERVAL` | Fenstergröße des Sendebudgets aus `RELAY_INITIALIZATION_BURST_SIZE` (Spring-`Duration`-Syntax, z. B. `PT1H`, `30m`) — ebenfalls postfachweit und global. | `PT1H` |
+| `RELAY_ORGANIZER_EMAIL` | Organizer-Adresse, die auf jeden erzeugten Blocker gesetzt wird — **einheitlich für jeden konfigurierten Kalender**, unabhängig von dessen Typ, kein Per-Kalender-Override (siehe [`docs/features/relay-config-consolidation.md`](docs/features/relay-config-consolidation.md)). | — (erforderlich) |
+| `RELAY_ATTENDEE_EMAIL` | Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail geht — ebenfalls global, ein Wert für alle Kalender. | — (erforderlich) |
+| `RELAY_FROM_ADDRESS` | `From`/Envelope-From der iMIP-Mail — ebenfalls global. | — (erforderlich) |
+| `RELAY_REPLY_TO_ADDRESS` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) — ebenfalls global. | — (erforderlich) |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert).
@@ -190,6 +194,18 @@ Kalender (z. B. in CI).
 relay:
   poll-interval: 5m
   recurring-event-horizon: P6M
+
+  organizer-email: ${RELAY_ORGANIZER_EMAIL}
+  attendee-email: ${RELAY_ATTENDEE_EMAIL}
+  from-address: ${RELAY_FROM_ADDRESS}
+  reply-to-address: ${RELAY_REPLY_TO_ADDRESS}
+
+  google-credentials:
+    - id: personal-google-account
+      client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
+      client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
+      refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
+
   calendars:
     - id: personal-nextcloud
       # type: caldav   -- optional, das ist ohnehin der Default; bestehende
@@ -198,26 +214,34 @@ relay:
       caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
       caldav-username: ${CALDAV_PERSONAL_USERNAME}
       caldav-password: ${CALDAV_PERSONAL_PASSWORD}
-      organizer-email: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
-      attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
-      from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
-      reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
-    - id: personal-google
+    - id: personal-google-primary
       type: google
       google-calendar-id: ${GOOGLE_PERSONAL_CALENDAR_ID}
-      google-client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
-      google-client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
-      google-refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
-      organizer-email: ${RELAY_GOOGLE_ORGANIZER_EMAIL}
-      attendee-email: ${RELAY_GOOGLE_ATTENDEE_EMAIL}
-      from-address: ${RELAY_GOOGLE_FROM_ADDRESS}
-      reply-to-address: ${RELAY_GOOGLE_REPLY_TO_ADDRESS}
+      google-credentials-id: personal-google-account
+    - id: personal-google-secondary
+      type: google
+      google-calendar-id: ${GOOGLE_SECONDARY_CALENDAR_ID}
+      google-credentials-id: personal-google-account
 ```
 
-Beide Einträge werden vom selben `PollAndRelaySchedulerAdapter` unabhängig
-im konfigurierten `relay.poll-interval` gepollt — ein CalDAV- und ein
-Google-Eintrag koexistieren im selben Deployment, jeder mit eigener
+`organizer-email`/`attendee-email`/`from-address`/`reply-to-address` sind
+**global**, ein einziger Satz für jeden konfigurierten Kalender unabhängig
+von dessen Typ — bewusst kein Per-Kalender-Override (siehe
+[`docs/features/relay-config-consolidation.md`](docs/features/relay-config-consolidation.md)).
+Alle drei Kalendereinträge (ein CalDAV- und zwei Google-Einträge, letztere
+mit demselben geteilten `google-credentials`-Set) werden vom selben
+`PollAndRelaySchedulerAdapter` unabhängig im konfigurierten
+`relay.poll-interval` gepollt — beliebige Kombinationen aus CalDAV- und
+Google-Einträgen koexistieren im selben Deployment, jeder mit eigener
 Relay-Historie.
+
+Jeder Eintrag in `relay.google-credentials`:
+
+| Feld | Beschreibung |
+|---|---|
+| `id` | Frei wählbarer, stabiler Bezeichner dieses Credential-Sets, referenziert von `relay.calendars[].google-credentials-id`. Muss innerhalb von `relay.google-credentials` eindeutig sein. |
+| `client-id`, `client-secret` | Die vom Deployer selbst in der Google Cloud Console angelegten OAuth-2.0-Client-Credentials — siehe [`docs/technical/google-calendar-setup.md`](docs/technical/google-calendar-setup.md) für den einmaligen Einrichtungsschritt. |
+| `refresh-token` | Der einmalig per OAuth-Playground-Consent beschaffte, langlebige Refresh-Token — wie ein CalDAV-Passwort ausschließlich über eine Umgebungsvariable, nie im Klartext eingecheckt. |
 
 Jeder Eintrag in `relay.calendars`:
 
@@ -228,19 +252,15 @@ Jeder Eintrag in `relay.calendars`:
 | `caldav-url` | CalDAV-Collection-URL des Quellkalenders. Pflicht nur bei `type: caldav`. |
 | `caldav-username`, `caldav-password` | Basic-Auth-Zugangsdaten für `caldav-url` — nur über Umgebungsvariablen, nie im Klartext einchecken. Pflicht nur bei `type: caldav`. |
 | `google-calendar-id` | Google-Kalender-ID (bei einem persönlichen Konto meist die Gmail-Adresse selbst, oder eine über Google Calendars "Kalender integrieren"-Einstellungsseite ermittelte ID für einen sekundären Kalender). Pflicht nur bei `type: google`. |
-| `google-client-id`, `google-client-secret` | Die vom Deployer selbst in der Google Cloud Console angelegten OAuth-2.0-Client-Credentials — siehe [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md) für den einmaligen Einrichtungsschritt. Pflicht nur bei `type: google`. |
-| `google-refresh-token` | Der einmalig per OAuth-Playground-Consent beschaffte, langlebige Refresh-Token — wie ein CalDAV-Passwort ausschließlich über eine Umgebungsvariable, nie im Klartext eingecheckt. Pflicht nur bei `type: google`. |
-| `organizer-email` | Organizer-Adresse, die auf jeden erzeugten Blocker gesetzt wird |
-| `attendee-email` | Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail geht |
-| `from-address` | `From`/Envelope-From der iMIP-Mail |
-| `reply-to-address` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) |
+| `google-credentials-id` | Referenziert ein `relay.google-credentials[].id` — löst zur Laufzeit in `RelayWiringConfiguration` in das zugehörige `client-id`/`client-secret`/`refresh-token`-Tripel auf. Pflicht nur bei `type: google`; eine unauflösbare Referenz bricht den Anwendungsstart mit einer Validierungsmeldung ab (siehe [`docs/features/relay-config-consolidation.md`](docs/features/relay-config-consolidation.md)). |
 | `delta-sync-enabled` | Ob der konfigurierte Adapter für diesen Kalender seinen protokollspezifischen Delta-Sync-Mechanismus verwenden darf (RFC-6578-`sync-collection` bei CalDAV, `syncToken`-basiert bei Google — siehe [`docs/features/delta-sync.md`](docs/features/delta-sync.md) und [`docs/features/google-calendar-integration.md`](docs/features/google-calendar-integration.md)). Bei CalDAV wird ein Server, der `sync-collection` nicht unterstützt, bereits automatisch erkannt und fällt selbstständig auf `calendar-query` zurück — dieses Feld ist dort ein manueller Notausschalter für den selteneren Fall, dass diese automatische Erkennung selbst nicht wie erwartet funktioniert. Optional, Default `true`. |
 
-Jedes Feld ist pro Kalender konfigurierbar — für eine einheitliche Identität
-über alle Kalender hinweg genügt es, denselben Wert in jedem Eintrag zu
-wiederholen. Für einen weiteren Kalender wird `relay.calendars` um einen
-weiteren Eintrag mit eigenen Umgebungsvariablen ergänzt (siehe
-`.env.example`).
+Für einen weiteren Kalender wird `relay.calendars` um einen weiteren
+Eintrag mit eigenen Umgebungsvariablen ergänzt (siehe `.env.example`); ein
+weiteres Google-Konto bekommt einen weiteren `relay.google-credentials`-
+Eintrag, ein weiterer Kalender desselben bereits konfigurierten
+Google-Kontos braucht nur einen weiteren `relay.calendars`-Eintrag mit
+derselben `google-credentials-id`.
 
 ## Persistenz
 

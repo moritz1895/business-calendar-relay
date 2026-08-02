@@ -12,9 +12,14 @@ import java.lang.annotation.Target;
  * right set of protocol-specific fields is non-blank for its configured
  * {@link RelayProperties.CalendarConfig.CalendarSourceType}: the CalDAV-specific fields
  * ({@code caldavUrl}/{@code caldavUsername}/{@code caldavPassword}) when {@code type ==
- * CALDAV}, or the Google-specific fields ({@code googleCalendarId}/{@code googleClientId}/
- * {@code googleClientSecret}/{@code googleRefreshToken}) when {@code type == GOOGLE} -- see
- * {@code docs/features/google-calendar-integration.md}'s Design-Entscheidung 1.
+ * CALDAV}, or the Google-specific fields ({@code googleCalendarId}/
+ * {@code googleCredentialsId}) when {@code type == GOOGLE} -- see
+ * {@code docs/features/google-calendar-integration.md}'s Design-Entscheidung 1 and
+ * {@code docs/features/relay-config-consolidation.md}. This constraint only checks that
+ * {@code googleCredentialsId} is non-blank -- whether it actually resolves to a
+ * configured {@code relay.google-credentials[].id} is checked separately by
+ * {@link ConsistentGoogleCredentialsReferences}, which needs sibling-list visibility this
+ * per-{@link RelayProperties.CalendarConfig} constraint does not have.
  *
  * <p>Deliberately a class-level Bean Validation constraint rather than a manual check in
  * {@link RelayProperties.CalendarConfig}'s compact constructor: a compact-constructor

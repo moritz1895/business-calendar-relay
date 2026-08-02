@@ -14,9 +14,10 @@ import org.springframework.validation.annotation.Validated;
 
 /**
  * Binds {@code relay.*} configuration: the shared poll interval, the shared recurring-
- * event creation horizon, the shared initialization burst-filter budget, and the list of
- * configured private source calendars, per {@code CLAUDE.md}'s "any number of source
- * calendars, declared in one config file" requirement.
+ * event creation horizon, the shared initialization burst-filter budget, the shared iMIP
+ * identity, the shared Google OAuth credential sets, and the list of configured private
+ * source calendars, per {@code CLAUDE.md}'s "any number of source calendars, declared in
+ * one config file" requirement.
  *
  * <p>An empty {@link #calendars()} is valid on purpose so the application starts
  * cleanly with zero source calendars configured (e.g. in CI).
@@ -32,18 +33,39 @@ import org.springframework.validation.annotation.Validated;
  * every configured calendar, not a per-{@link CalendarConfig} override -- see
  * {@code docs/features/burst-filter-initialization.md} (issue #16) for why a per-calendar
  * override would defeat the mailbox-wide budget's purpose.
+ *
+ * <p>{@link #organizerEmail()}/{@link #attendeeEmail()}/{@link #fromAddress()}/
+ * {@link #replyToAddress()} are, likewise, a single global iMIP identity shared across
+ * every configured calendar regardless of {@link CalendarConfig#type()} -- see
+ * {@code docs/features/relay-config-consolidation.md}. Deliberately no per-calendar
+ * override: this project's single deployer runs exactly one business mailbox.
+ *
+ * <p>{@link #googleCredentials()} is a global list of named Google OAuth credential sets,
+ * each referenced by id from any number of {@code type: GOOGLE} {@link CalendarConfig}
+ * entries via {@link CalendarConfig#googleCredentialsId()} -- see
+ * {@code docs/features/relay-config-consolidation.md}. An empty list is valid, exactly
+ * like an empty {@link #calendars()}, for a deployment with no {@code type: GOOGLE}
+ * calendar configured. {@link ConsistentGoogleCredentialsReferences} enforces that every
+ * configured reference actually resolves and that no two entries share an {@code id}.
  */
 @Validated
 @ConfigurationProperties("relay")
+@ConsistentGoogleCredentialsReferences
 public record RelayProperties(
         @NotNull Duration pollInterval,
         @Valid List<CalendarConfig> calendars,
         @NotNull @DefaultValue("P6M") Period recurringEventHorizon,
-        @NotNull @Valid InitializationProperties initialization) {
+        @NotNull @Valid InitializationProperties initialization,
+        @NotBlank String organizerEmail,
+        @NotBlank String attendeeEmail,
+        @NotBlank String fromAddress,
+        @NotBlank String replyToAddress,
+        @Valid List<GoogleCredentials> googleCredentials) {
 
     public RelayProperties {
         calendars = calendars == null ? List.of() : List.copyOf(calendars);
         initialization = initialization == null ? new InitializationProperties(5, Duration.ofHours(1)) : initialization;
+        googleCredentials = googleCredentials == null ? List.of() : List.copyOf(googleCredentials);
     }
 
     /**
@@ -65,15 +87,40 @@ public record RelayProperties(
     }
 
     /**
+     * One named Google OAuth 2.0 credential set, configured once per Google account under
+     * {@code relay.google-credentials[]} and referenced by any number of {@code type:
+     * GOOGLE} {@link CalendarConfig} entries via {@link CalendarConfig#googleCredentialsId()}
+     * -- see {@code docs/features/relay-config-consolidation.md}.
+     *
+     * @param id stable identifier for this credential set, freely chosen by the deployer.
+     *     Referenced from {@link CalendarConfig#googleCredentialsId()}. Must be unique
+     *     within {@link #googleCredentials()} -- enforced by
+     *     {@link ConsistentGoogleCredentialsReferences}.
+     * @param clientId the deployer's own OAuth 2.0 client id, from a Google Cloud project
+     *     the deployer owns.
+     * @param clientSecret the deployer's own OAuth 2.0 client secret, paired with
+     *     {@link #clientId()}.
+     * @param refreshToken the long-lived refresh token obtained once via the OAuth
+     *     Playground consent flow, exchanged for a short-lived access token on every poll
+     *     cycle -- treated exactly like a CalDAV password: never rewritten at runtime.
+     */
+    public record GoogleCredentials(
+            @NotBlank String id,
+            @NotBlank String clientId,
+            @NotBlank String clientSecret,
+            @NotBlank String refreshToken) {
+    }
+
+    /**
      * One configured private source calendar: its source-protocol location and
-     * credentials, its stable persistence key, and the iMIP identity used for every
-     * blocker it produces.
+     * credentials, and its stable persistence key. The iMIP identity used for every
+     * blocker this calendar produces is no longer carried here -- it is global, see
+     * {@link RelayProperties#organizerEmail()} and siblings.
      *
      * <p>{@link #type()} discriminates between the two coexisting source-protocol
      * families this record can describe -- CalDAV ({@link #caldavUrl()}/
      * {@link #caldavUsername()}/{@link #caldavPassword()}) or Google Calendar
-     * ({@link #googleCalendarId()}/{@link #googleClientId()}/{@link #googleClientSecret()}/
-     * {@link #googleRefreshToken()}) -- see
+     * ({@link #googleCalendarId()}/{@link #googleCredentialsId()}) -- see
      * {@code docs/features/google-calendar-integration.md}'s Design-Entscheidung 1. It
      * defaults to {@code CALDAV} so an existing deployment's configuration, written before
      * this field existed, binds unchanged (Spring Boot's relaxed binding fills in the
@@ -96,19 +143,12 @@ public record RelayProperties(
      *     {@link #type()} is {@code CALDAV}.
      * @param googleCalendarId Google Calendar identifier {@code GoogleCalendarSourceAdapter}
      *     reads events from. Required only when {@link #type()} is {@code GOOGLE}.
-     * @param googleClientId the deployer's own OAuth 2.0 client id, from a Google Cloud
-     *     project the deployer owns. Required only when {@link #type()} is {@code GOOGLE}.
-     * @param googleClientSecret the deployer's own OAuth 2.0 client secret, paired with
-     *     {@link #googleClientId()}. Required only when {@link #type()} is {@code GOOGLE}.
-     * @param googleRefreshToken the long-lived refresh token obtained once via the OAuth
-     *     Playground consent flow, exchanged for a short-lived access token on every poll
-     *     cycle -- treated exactly like a CalDAV password: never rewritten at runtime.
-     *     Required only when {@link #type()} is {@code GOOGLE}.
-     * @param organizerEmail organizer address set on every blocker built from this calendar
-     * @param attendeeEmail business Outlook mailbox address the iMIP mail is sent to
-     * @param fromAddress {@code From}/envelope-from of the iMIP mail
-     * @param replyToAddress {@code Reply-To} of the iMIP mail, typically the organizer's
-     *     human address
+     * @param googleCredentialsId references a {@link GoogleCredentials#id()} in
+     *     {@link RelayProperties#googleCredentials()}, resolved in
+     *     {@code RelayWiringConfiguration} into the concrete client-id/client-secret/
+     *     refresh-token triple passed to {@code GoogleCalendarSourceAdapter}. Required
+     *     only when {@link #type()} is {@code GOOGLE} -- see
+     *     {@code docs/features/relay-config-consolidation.md}.
      * @param deltaSyncEnabled whether the configured source adapter may use its
      *     protocol-specific delta-sync mechanism for this calendar (RFC 6578
      *     {@code sync-collection} for CalDAV, {@code syncToken}-based {@code events.list}
@@ -130,13 +170,7 @@ public record RelayProperties(
             @Nullable String caldavUsername,
             @Nullable String caldavPassword,
             @Nullable String googleCalendarId,
-            @Nullable String googleClientId,
-            @Nullable String googleClientSecret,
-            @Nullable String googleRefreshToken,
-            @NotBlank String organizerEmail,
-            @NotBlank String attendeeEmail,
-            @NotBlank String fromAddress,
-            @NotBlank String replyToAddress,
+            @Nullable String googleCredentialsId,
             @DefaultValue("true") boolean deltaSyncEnabled) {
 
         /**

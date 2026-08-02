@@ -1,6 +1,7 @@
 package ms.rohde.businesscalendarrelay.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.http.HttpClient;
 import java.time.Clock;
@@ -14,6 +15,7 @@ import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.GoogleCalend
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.PendingCreationJpaRepository;
 import ms.rohde.businesscalendarrelay.adapters.outbound.persistence.RelayStateJpaRepository;
 import ms.rohde.businesscalendarrelay.config.RelayProperties.CalendarConfig.CalendarSourceType;
+import ms.rohde.businesscalendarrelay.config.RelayProperties.GoogleCredentials;
 import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUseCase;
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BurstBudget;
@@ -65,14 +67,14 @@ class RelayWiringConfigurationTest {
     private static final Period RECURRING_EVENT_HORIZON = Period.ofMonths(6);
     private static final RelayProperties.InitializationProperties INITIALIZATION =
             new RelayProperties.InitializationProperties(5, Duration.ofHours(1));
+    private static final GoogleCredentials GOOGLE_CREDENTIALS =
+            new GoogleCredentials("personal-google-account", "client-id", "client-secret", "refresh-token");
 
     @Test
     void buildUseCases_givenThreeCalendarConfigs_thenReturnsThreeMappedUseCases() {
-        var relayProperties = new RelayProperties(
-                Duration.ofMinutes(5),
+        var relayProperties = relayProperties(
                 List.of(caldavCalendarConfig("calendar-a"), caldavCalendarConfig("calendar-b"), caldavCalendarConfig("calendar-c")),
-                RECURRING_EVENT_HORIZON,
-                INITIALIZATION);
+                List.of());
 
         var useCases = buildUseCases(relayProperties);
 
@@ -83,8 +85,7 @@ class RelayWiringConfigurationTest {
 
     @Test
     void buildUseCases_givenNoCalendarConfigs_thenReturnsEmptyList() {
-        var relayProperties =
-                new RelayProperties(Duration.ofMinutes(5), List.of(), RECURRING_EVENT_HORIZON, INITIALIZATION);
+        var relayProperties = relayProperties(List.of(), List.of());
 
         var useCases = buildUseCases(relayProperties);
 
@@ -93,8 +94,8 @@ class RelayWiringConfigurationTest {
 
     @Test
     void buildUseCases_givenGoogleCalendarConfig_thenReturnsMappedUseCase() {
-        var relayProperties = new RelayProperties(
-                Duration.ofMinutes(5), List.of(googleCalendarConfig("calendar-google")), RECURRING_EVENT_HORIZON, INITIALIZATION);
+        var relayProperties = relayProperties(
+                List.of(googleCalendarConfig("calendar-google", "personal-google-account")), List.of(GOOGLE_CREDENTIALS));
 
         var useCases = buildUseCases(relayProperties);
 
@@ -105,11 +106,9 @@ class RelayWiringConfigurationTest {
 
     @Test
     void buildUseCases_givenMixedCaldavAndGoogleCalendarConfigs_thenReturnsBothMappedAsUseCases() {
-        var relayProperties = new RelayProperties(
-                Duration.ofMinutes(5),
-                List.of(caldavCalendarConfig("calendar-caldav"), googleCalendarConfig("calendar-google")),
-                RECURRING_EVENT_HORIZON,
-                INITIALIZATION);
+        var relayProperties = relayProperties(
+                List.of(caldavCalendarConfig("calendar-caldav"), googleCalendarConfig("calendar-google", "personal-google-account")),
+                List.of(GOOGLE_CREDENTIALS));
 
         var useCases = buildUseCases(relayProperties);
 
@@ -117,10 +116,53 @@ class RelayWiringConfigurationTest {
     }
 
     @Test
+    void buildUseCases_givenTwoGoogleCalendarsSharingOneGoogleCredentialsEntry_thenReturnsBothMappedAsUseCases() {
+        var relayProperties = relayProperties(
+                List.of(
+                        googleCalendarConfig("calendar-google-primary", "personal-google-account"),
+                        googleCalendarConfig("calendar-google-secondary", "personal-google-account")),
+                List.of(GOOGLE_CREDENTIALS));
+
+        var useCases = buildUseCases(relayProperties);
+
+        assertThat(useCases).hasSize(2);
+    }
+
+    /**
+     * {@code googleCredentialsId} not resolving against {@code relay.google-credentials}
+     * is normally rejected earlier, at Spring Boot property-binding time, by
+     * {@link ConsistentGoogleCredentialsReferences} -- this pins the defensive fallback
+     * inside {@link RelayWiringConfiguration} itself for the case where that earlier
+     * validation is bypassed (e.g. a {@link RelayProperties} instance built directly, as
+     * every test in this class does).
+     */
+    @Test
+    void buildUseCases_givenUnresolvableGoogleCredentialsId_thenThrowsIllegalStateException() {
+        var relayProperties = relayProperties(
+                List.of(googleCalendarConfig("calendar-google", "typo-account")), List.of(GOOGLE_CREDENTIALS));
+
+        assertThatThrownBy(() -> buildUseCases(relayProperties)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void relayProperties_givenNullCalendars_thenDefaultsToEmptyList() {
-        var relayProperties = new RelayProperties(Duration.ofMinutes(5), null, RECURRING_EVENT_HORIZON, INITIALIZATION);
+        var relayProperties = relayProperties(null, List.of());
 
         assertThat(relayProperties.calendars()).isEmpty();
+    }
+
+    private static RelayProperties relayProperties(
+            List<RelayProperties.CalendarConfig> calendars, List<GoogleCredentials> googleCredentials) {
+        return new RelayProperties(
+                Duration.ofMinutes(5),
+                calendars,
+                RECURRING_EVENT_HORIZON,
+                INITIALIZATION,
+                "organizer@example.com",
+                "business@example.com",
+                "relay@example.com",
+                "organizer@example.com",
+                googleCredentials);
     }
 
     private List<PollAndRelaySourceCalendarUseCase> buildUseCases(RelayProperties relayProperties) {
@@ -148,16 +190,10 @@ class RelayWiringConfigurationTest {
                 "password-" + id,
                 null,
                 null,
-                null,
-                null,
-                "organizer-" + id + "@example.com",
-                "business@example.com",
-                "relay@example.com",
-                "organizer-" + id + "@example.com",
                 true);
     }
 
-    private static RelayProperties.CalendarConfig googleCalendarConfig(String id) {
+    private static RelayProperties.CalendarConfig googleCalendarConfig(String id, String googleCredentialsId) {
         return new RelayProperties.CalendarConfig(
                 id,
                 CalendarSourceType.GOOGLE,
@@ -165,13 +201,7 @@ class RelayWiringConfigurationTest {
                 null,
                 null,
                 "calendar-id-" + id + "@group.calendar.google.com",
-                "client-id-" + id,
-                "client-secret-" + id,
-                "refresh-token-" + id,
-                "organizer-" + id + "@example.com",
-                "business@example.com",
-                "relay@example.com",
-                "organizer-" + id + "@example.com",
+                googleCredentialsId,
                 true);
     }
 }

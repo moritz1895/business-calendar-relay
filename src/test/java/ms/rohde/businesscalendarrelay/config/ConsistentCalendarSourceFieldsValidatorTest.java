@@ -21,24 +21,10 @@ class ConsistentCalendarSourceFieldsValidatorTest {
 
     private static CalendarConfig caldavConfig(String caldavUrl, String caldavUsername, String caldavPassword) {
         return new CalendarConfig(
-                "calendar-id",
-                CalendarSourceType.CALDAV,
-                caldavUrl,
-                caldavUsername,
-                caldavPassword,
-                null,
-                null,
-                null,
-                null,
-                "organizer@example.com",
-                "business@example.com",
-                "relay@example.com",
-                "organizer@example.com",
-                true);
+                "calendar-id", CalendarSourceType.CALDAV, caldavUrl, caldavUsername, caldavPassword, null, null, true);
     }
 
-    private static CalendarConfig googleConfig(
-            String googleCalendarId, String googleClientId, String googleClientSecret, String googleRefreshToken) {
+    private static CalendarConfig googleConfig(String googleCalendarId, String googleCredentialsId) {
         return new CalendarConfig(
                 "calendar-id",
                 CalendarSourceType.GOOGLE,
@@ -46,13 +32,7 @@ class ConsistentCalendarSourceFieldsValidatorTest {
                 null,
                 null,
                 googleCalendarId,
-                googleClientId,
-                googleClientSecret,
-                googleRefreshToken,
-                "organizer@example.com",
-                "business@example.com",
-                "relay@example.com",
-                "organizer@example.com",
+                googleCredentialsId,
                 true);
     }
 
@@ -86,14 +66,21 @@ class ConsistentCalendarSourceFieldsValidatorTest {
 
     @Test
     void validate_givenGoogleTypeWithAllGoogleFieldsPresent_thenNoViolation() {
-        var violations = VALIDATOR.validate(googleConfig("someone@gmail.com", "client-id", "client-secret", "refresh-token"));
+        var violations = VALIDATOR.validate(googleConfig("someone@gmail.com", "personal-google-account"));
 
         assertThat(violations).isEmpty();
     }
 
     @Test
-    void validate_givenGoogleTypeMissingGoogleRefreshToken_thenReportsViolation() {
-        var violations = VALIDATOR.validate(googleConfig("someone@gmail.com", "client-id", "client-secret", null));
+    void validate_givenGoogleTypeMissingGoogleCredentialsId_thenReportsViolation() {
+        var violations = VALIDATOR.validate(googleConfig("someone@gmail.com", null));
+
+        assertThat(violations).isNotEmpty();
+    }
+
+    @Test
+    void validate_givenGoogleTypeMissingGoogleCalendarId_thenReportsViolation() {
+        var violations = VALIDATOR.validate(googleConfig(null, "personal-google-account"));
 
         assertThat(violations).isNotEmpty();
     }
@@ -108,12 +95,6 @@ class ConsistentCalendarSourceFieldsValidatorTest {
                 "password",
                 null,
                 null,
-                null,
-                null,
-                "organizer@example.com",
-                "business@example.com",
-                "relay@example.com",
-                "organizer@example.com",
                 true));
 
         assertThat(violations).isNotEmpty();
