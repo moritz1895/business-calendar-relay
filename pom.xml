@@ -24,7 +24,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <jspecify.version>1.0.0</jspecify.version>
         <archunit.version>1.4.0</archunit.version>
-        <hexagonal-arch.version>1.0.0-SNAPSHOT</hexagonal-arch.version>
+        <hexagonal-arch.version>1.0.0</hexagonal-arch.version>
         <ical4j.version>4.1.1</ical4j.version>
     </properties>
 
@@ -192,18 +192,18 @@
         </dependency>
     </dependencies>
 
-    <!-- ms.rohde:hexagonal-arch-* is a SNAPSHOT only published to this internal repository,
-         never to Maven Central; required for both local builds and the containerized Docker
-         build (see Dockerfile), neither of which has access to a developer's local .m2 cache. -->
+    <!-- ms.rohde:hexagonal-arch-* is only published to this internal repository, never to
+         Maven Central; required for both local builds and the containerized Docker build
+         (see Dockerfile), neither of which has access to a developer's local .m2 cache. -->
     <repositories>
         <repository>
-            <id>internal-snapshots</id>
-            <url>http://maven.home/snapshots</url>
+            <id>internal-releases</id>
+            <url>http://maven.home/releases</url>
             <releases>
-                <enabled>false</enabled>
+                <enabled>true</enabled>
             </releases>
             <snapshots>
-                <enabled>true</enabled>
+                <enabled>false</enabled>
             </snapshots>
         </repository>
     </repositories>
