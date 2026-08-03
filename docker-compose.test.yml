@@ -1,0 +1,34 @@
+# Local test override: replaces the real SMTP relay with a local Mailpit catcher so a
+# test run never sends real iMIP mail to the business Outlook mailbox, and gives an HTTP
+# API (http://localhost:8025/api/v1/messages) to assert generated mail against instead
+# of manual inspection of the real mailbox. Combine with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up
+#
+# Also redirects StateStore to a separate ./data-test bind mount -- a test run must
+# never write into the same relay-state.mv.db a real deployment uses, or the next real
+# run would treat already-relayed events as already-known and silently skip them.
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025" # Web UI + REST API (http://localhost:8025)
+      - "1025:1025" # SMTP listener the app connects to as SMTP_HOST=mailpit below
+
+  app:
+    depends_on:
+      - mailpit
+    environment:
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      # Mailpit's default SMTP listener accepts unauthenticated, unencrypted mail --
+      # the opposite of the implicit-TLS + auth the real relay needs (see
+      # application.yml). Both must be turned off explicitly, or the app fails to
+      # connect. The username/password values themselves are never checked once auth
+      # is off -- any non-empty string satisfies application.yml's required (no
+      # default) SMTP_USERNAME/SMTP_PASSWORD placeholders.
+      SMTP_USERNAME: mailpit-test
+      SMTP_PASSWORD: mailpit-test
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: "false"
+    volumes:
+      - ./data-test:/app/data
