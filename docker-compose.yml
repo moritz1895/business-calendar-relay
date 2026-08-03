@@ -42,27 +42,27 @@ services:
       # (Spring-Duration-Syntax, z. B. PT1H, 30m) -- ebenfalls postfachweit und
       # global. Default: PT1H
       RELAY_INITIALIZATION_BURST_INTERVAL: ${RELAY_INITIALIZATION_BURST_INTERVAL:-PT1H}
-      # One source calendar's CalDAV credentials + relay identity, referenced from
+      # Uniform iMIP identity -- applies to every configured calendar, regardless of its
+      # type (relay.organizer-email/attendee-email/from-address/reply-to-address).
+      # Deliberately no per-calendar override any more (see
+      # docs/features/relay-config-consolidation.md) -- a single set, required, no
+      # default.
+      RELAY_ORGANIZER_EMAIL: ${RELAY_ORGANIZER_EMAIL}
+      RELAY_ATTENDEE_EMAIL: ${RELAY_ATTENDEE_EMAIL}
+      RELAY_FROM_ADDRESS: ${RELAY_FROM_ADDRESS}
+      RELAY_REPLY_TO_ADDRESS: ${RELAY_REPLY_TO_ADDRESS}
+      # One CalDAV source calendar's credentials, referenced from
       # config/relay-calendars.yml (see config/relay-calendars.yml.example). Add one
-      # differently-named block per additional configured calendar (matching a second
-      # entry in that file), same as documented in .env.example. None of the six
-      # variables below have a default -- all required once referenced from
-      # config/relay-calendars.yml.
+      # differently-named block per additional CalDAV calendar (matching a second entry
+      # in that file), same as documented in .env.example. Neither variable below has a
+      # default -- both required once referenced from config/relay-calendars.yml. A
+      # type: google calendar entry instead references relay.google-credentials[] --
+      # add one GOOGLE_<NAME>_CLIENT_ID/_CLIENT_SECRET/_REFRESH_TOKEN block the same way
+      # once you configure one (see .env.example).
       # CalDAV-Basic-Auth-Benutzername für den Quellkalender.
       CALDAV_PERSONAL_USERNAME: ${CALDAV_PERSONAL_USERNAME}
       # CalDAV-Basic-Auth-Passwort für den Quellkalender.
       CALDAV_PERSONAL_PASSWORD: ${CALDAV_PERSONAL_PASSWORD}
-      # Organizer-Adresse, die auf jeden aus diesem Kalender erzeugten Blocker gesetzt
-      # wird (iCal ORGANIZER).
-      RELAY_PERSONAL_ORGANIZER_EMAIL: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
-      # Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail für diesen
-      # Kalender geht (iCal ATTENDEE).
-      RELAY_PERSONAL_ATTENDEE_EMAIL: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
-      # From-/Envelope-From-Adresse der iMIP-Mail für diesen Kalender.
-      RELAY_PERSONAL_FROM_ADDRESS: ${RELAY_PERSONAL_FROM_ADDRESS}
-      # Reply-To-Adresse der iMIP-Mail für diesen Kalender (i. d. R. die menschliche
-      # Adresse des Organizers, nicht die technische From-Adresse).
-      RELAY_PERSONAL_REPLY_TO_ADDRESS: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
       # Bindet config/relay-calendars.yml (siehe Volume-Mount unten) als zusätzliche,
       # überschreibende Spring-Konfigurationsquelle ein -- das ist der Ort, an dem
       # relay.calendars tatsächlich befüllt wird. Fester Pfad, kein Default nötig,
