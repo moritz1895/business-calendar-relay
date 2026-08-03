@@ -473,3 +473,25 @@ statt bei jedem Testlauf gegen eine leere Datenbank zu pollen — das ist
 genau der Fall, der sonst zu "sieht alles neu aus"-Mail-Dopplungen führt.
 Container vor dem Kopieren stoppen (`docker compose stop`), damit H2 keine
 offenen Schreiboperationen hat.
+
+### Lokaler Testlauf gegen echte Quellkalender, ohne echte iMIP-Mails zu verschicken
+
+`docker-compose.test.yml` ersetzt per Override das echte SMTP-Relais durch
+einen lokalen [Mailpit](https://mailpit.axllent.org/)-Container und lenkt
+`StateStore`/`CalendarReplicaStore` auf ein eigenes, leeres `./data-test`-
+Verzeichnis um:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.test.yml up --build -d
+```
+
+Damit lässt sich ein Testlauf gegen echte, produktive Quellkalender fahren
+(die werden ja nur gelesen), ohne dass jemals eine iMIP-Mail beim echten
+dienstlichen Postfach landet — jede generierte Mail bleibt in Mailpit hängen
+und lässt sich unter `http://localhost:8025` einsehen oder per REST-API
+(`http://localhost:8025/api/v1/messages`) automatisiert gegen die in
+`CLAUDE.md` dokumentierte, Outlook-verifizierte Struktur prüfen. Das
+separate `./data-test`-Verzeichnis verhindert außerdem, dass ein Testlauf den
+produktiven `StateStore`-Zustand verändert (siehe vorheriger Abschnitt) —
+ein zukünftiger echter Lauf würde sonst testweise erzeugte Blocker fälschlich
+als "bereits relayed" behandeln.
