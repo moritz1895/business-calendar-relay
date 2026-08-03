@@ -126,8 +126,10 @@ Transport verwendet, exakt dem `From`-Header. Das hält SPF grün (siehe
 auf die menschliche Organizer-Adresse gesetzt, damit eine Antwort auf die
 Blocker-Mail beim Menschen landet, nicht beim technischen Absender.
 
-Beide Adressen kommen pro Kalender aus `relay.calendars[].from-address` bzw.
-`relay.calendars[].reply-to-address` (siehe `RelayProperties.CalendarConfig`).
+Beide Adressen kommen global aus `relay.from-address` bzw.
+`relay.reply-to-address` (siehe `RelayProperties`) — seit
+`docs/features/relay-config-consolidation.md` ein einziger, für jeden
+konfigurierten Kalender einheitlicher Wert, nicht mehr pro Kalendereintrag.
 
 ## Mail-`Subject`
 

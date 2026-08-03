@@ -93,63 +93,93 @@ Google Calendar → Zahnrad → **Einstellungen** → den betreffenden Kalender
 auswählen → Abschnitt **„Kalender integrieren“** → dort steht die
 `google-calendar-id` (endet meist auf `@group.calendar.google.com`).
 
+## Ein OAuth-Setup-Durchlauf pro Google-Konto, nicht pro Kalender
+
+**Seit `docs/features/relay-config-consolidation.md` gilt:** Die Schritte 1–6
+oben (OAuth-Client anlegen, Publishing-Status umschalten, Playground-Consent,
+`refresh_token` beschaffen) führt der Deployer weiterhin **einmal pro
+Google-Konto** aus — das ändert sich nicht. Was sich ändert: das Ergebnis
+dieses Durchlaufs (`client-id`/`client-secret`/`refresh-token`) wird nicht
+mehr pro Kalendereintrag kopiert, sondern **einmal** unter
+`relay.google-credentials[]` benannt (siehe „Konfigurationsreferenz“ unten).
+Kommt ein zweiter Kalender **desselben** Google-Kontos hinzu (z. B. ein
+sekundärer `@group.calendar.google.com`-Kalender), genügt ein weiterer
+`relay.calendars[]`-Eintrag mit `type: google`, einer neuen
+`google-calendar-id` und derselben, bereits vorhandenen
+`google-credentials-id` — **kein** erneuter OAuth-Playground-Durchlauf nötig.
+Ein neuer OAuth-Setup-Durchlauf ist nur für ein tatsächlich neues
+Google-**Konto** (oder einen neuen OAuth-Client) erforderlich.
+
 ## Konfigurationsreferenz
 
-Alle Felder sind pro `relay.calendars[]`-Eintrag mit `type: google`
-konfigurierbar — Namen exakt wie in `.env.example` und
-`config/relay-calendars.yml.example` in diesem Repository:
+`google-credentials-id`/`google-calendar-id`/`type` sind pro
+`relay.calendars[]`-Eintrag mit `type: google` konfigurierbar;
+`client-id`/`client-secret`/`refresh-token` sind pro
+`relay.google-credentials[]`-Eintrag konfigurierbar, einmal pro
+Google-Konto, geteilt von beliebig vielen `type: google`-Kalendereinträgen
+— Namen exakt wie in `.env.example` und `config/relay-calendars.yml.example`
+in diesem Repository:
 
 | yml-Feld (`relay.calendars[]`) | Env-Var im Beispielblock | Bedeutung |
 |---|---|---|
 | `type` | – (Literal `google`) | Diskriminator; ohne dieses Feld bindet ein Eintrag auf `caldav` |
 | `google-calendar-id` | `GOOGLE_PERSONAL_CALENDAR_ID` | siehe „`google-calendar-id` ermitteln“ oben |
-| `google-client-id` | `GOOGLE_PERSONAL_CLIENT_ID` | aus Schritt 2 |
-| `google-client-secret` | `GOOGLE_PERSONAL_CLIENT_SECRET` | aus Schritt 2 |
-| `google-refresh-token` | `GOOGLE_PERSONAL_REFRESH_TOKEN` | aus Schritt 6 — wie ein CalDAV-Passwort, nie im Klartext einchecken |
-| `organizer-email` | `RELAY_GOOGLE_ORGANIZER_EMAIL` | Organizer-Adresse auf jedem erzeugten Blocker |
-| `attendee-email` | `RELAY_GOOGLE_ATTENDEE_EMAIL` | dienstliches Outlook-Postfach |
-| `from-address` | `RELAY_GOOGLE_FROM_ADDRESS` | `From`/Envelope-From der iMIP-Mail |
-| `reply-to-address` | `RELAY_GOOGLE_REPLY_TO_ADDRESS` | `Reply-To` der iMIP-Mail |
+| `google-credentials-id` | – (Literal, z. B. `personal-google-account`) | Referenziert einen `relay.google-credentials[].id`-Eintrag (siehe unten). Unauflösbare Referenzen brechen den Anwendungsstart ab. |
 | `delta-sync-enabled` | – (optional, Default `true`) | manueller Notausschalter, fällt bei `false` auf einen stets vollständigen `events.list`-Request ohne `syncToken` zurück |
 
+| yml-Feld (`relay.google-credentials[]`) | Env-Var im Beispielblock | Bedeutung |
+|---|---|---|
+| `id` | – (Literal, z. B. `personal-google-account`) | Frei wählbarer, stabiler Bezeichner, referenziert von `relay.calendars[].google-credentials-id`. Muss innerhalb der Liste eindeutig sein. |
+| `client-id` | `GOOGLE_PERSONAL_CLIENT_ID` | aus Schritt 2 |
+| `client-secret` | `GOOGLE_PERSONAL_CLIENT_SECRET` | aus Schritt 2 |
+| `refresh-token` | `GOOGLE_PERSONAL_REFRESH_TOKEN` | aus Schritt 6 — wie ein CalDAV-Passwort, nie im Klartext einchecken |
+
+Die globale iMIP-Identität (`organizer-email`/`attendee-email`/
+`from-address`/`reply-to-address`) gilt seit `relay-config-consolidation.md`
+einheitlich auf `relay`-Ebene für jeden konfigurierten Kalender, nicht mehr
+pro `type: google`-Eintrag — siehe README.md „Konfiguration“.
+
 Vollständiges Beispiel (`config/relay-calendars.yml`, Werte referenziert aus
-`.env`):
+`.env`) — zwei Kalender desselben Google-Kontos, ein geteiltes
+Credential-Set:
 
 ```yaml
 relay:
+  google-credentials:
+    - id: personal-google-account
+      client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
+      client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
+      refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
+
   calendars:
-    - id: personal-google
+    - id: personal-google-primary
       type: google
       google-calendar-id: ${GOOGLE_PERSONAL_CALENDAR_ID}
-      google-client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
-      google-client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
-      google-refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
-      organizer-email: ${RELAY_GOOGLE_ORGANIZER_EMAIL}
-      attendee-email: ${RELAY_GOOGLE_ATTENDEE_EMAIL}
-      from-address: ${RELAY_GOOGLE_FROM_ADDRESS}
-      reply-to-address: ${RELAY_GOOGLE_REPLY_TO_ADDRESS}
+      google-credentials-id: personal-google-account
+
+    - id: personal-google-secondary
+      type: google
+      google-calendar-id: ${GOOGLE_SECONDARY_CALENDAR_ID}
+      google-credentials-id: personal-google-account
 ```
 
-Passender `.env`-Block (siehe `.env.example` für die auskommentierte
-Vorlage):
+Passender `.env`-Block (siehe `.env.example` für die vollständige Vorlage):
 
 ```
-GOOGLE_PERSONAL_CALENDAR_ID=you@gmail.com
 GOOGLE_PERSONAL_CLIENT_ID=changeme-oauth-client-id
 GOOGLE_PERSONAL_CLIENT_SECRET=changeme-oauth-client-secret
 GOOGLE_PERSONAL_REFRESH_TOKEN=changeme-refresh-token
-RELAY_GOOGLE_ORGANIZER_EMAIL=organizer@example.com
-RELAY_GOOGLE_ATTENDEE_EMAIL=business@example.com
-RELAY_GOOGLE_FROM_ADDRESS=relay@example.com
-RELAY_GOOGLE_REPLY_TO_ADDRESS=organizer@example.com
+GOOGLE_PERSONAL_CALENDAR_ID=you@gmail.com
+GOOGLE_SECONDARY_CALENDAR_ID=team-events@group.calendar.google.com
 ```
 
-`id` (hier `personal-google`) ist der Persistenz-Schlüssel für diesen
-Kalender — wie bei jedem CalDAV-Eintrag nach dem ersten Relay-Lauf niemals
-umbenennen (siehe README.md).
+`id` (hier `personal-google-primary`/`personal-google-secondary`) ist der
+Persistenz-Schlüssel für den jeweiligen Kalender — wie bei jedem
+CalDAV-Eintrag nach dem ersten Relay-Lauf niemals umbenennen (siehe
+README.md).
 
 Ein `type: google`-Eintrag koexistiert im selben `relay.calendars` mit
-beliebig vielen `type: caldav`-Einträgen; beide werden vom selben
+beliebig vielen `type: caldav`-Einträgen; alle werden vom selben
 `PollAndRelaySchedulerAdapter` unabhängig im konfigurierten
 `relay.poll-interval` gepollt.
 
@@ -189,7 +219,12 @@ fehlgeschlagenen Poll-Zyklus.
 
 - [`docs/features/google-calendar-integration.md`](../features/google-calendar-integration.md)
   — vollständige Design-Rationale (Port-Entscheidung, Konfigurationsschema,
-  `sourceUid`-Mapping, Open Questions).
+  `sourceUid`-Mapping, Open Questions). Ihr Konfigurationsschema (ein
+  vollständiges Credential-Tripel pro Kalendereintrag) ist durch
+  `relay-config-consolidation.md` (siehe unten) inzwischen überholt.
+- [`docs/features/relay-config-consolidation.md`](../features/relay-config-consolidation.md)
+  — die aktuelle Design-Rationale für `relay.google-credentials[]` und die
+  globale iMIP-Identität, auf der die Konfigurationsreferenz oben beruht.
 - [`docs/technical/caldav.md`](caldav.md), [`docs/technical/smtp.md`](smtp.md)
   — die beiden anderen protokollspezifischen technischen Dokumente dieses
   Projekts.

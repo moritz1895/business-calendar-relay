@@ -12,20 +12,16 @@ spring:
 
 relay:
   poll-interval: 1h
+  organizer-email: organizer@example.com
+  attendee-email: business@example.com
+  from-address: relay@example.com
+  reply-to-address: organizer@example.com
   calendars:
     - id: calendar-one
       caldav-url: https://caldav.example.com/calendars/one/
       caldav-username: user-one
       caldav-password: password-one
-      organizer-email: organizer-one@example.com
-      attendee-email: business@example.com
-      from-address: relay@example.com
-      reply-to-address: organizer-one@example.com
     - id: calendar-two
       caldav-url: https://caldav.example.com/calendars/two/
       caldav-username: user-two
       caldav-password: password-two
-      organizer-email: organizer-two@example.com
-      attendee-email: business@example.com
-      from-address: relay@example.com
-      reply-to-address: organizer-two@example.com

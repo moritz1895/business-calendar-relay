@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
 import java.time.Period;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import ms.rohde.businesscalendarrelay.config.RelayProperties.CalendarConfig.CalendarSourceType;
@@ -12,20 +13,35 @@ import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
 /**
- * Verifies {@code relay.recurring-event-horizon} and {@code relay.initialization}'s
- * binding behaviour specifically -- default values when absent from configuration, and
- * correct parsing when present -- via {@link Binder} directly rather than booting a
- * Spring context, mirroring how {@link RelayWiringConfigurationTest} keeps
- * {@code RelayWiringConfiguration}'s config-to-use-case mapping testable without one.
+ * Verifies {@code relay.recurring-event-horizon}, {@code relay.initialization}, the global
+ * iMIP identity fields, and {@code relay.google-credentials}' binding behaviour
+ * specifically -- default values when absent from configuration, and correct parsing when
+ * present -- via {@link Binder} directly rather than booting a Spring context, mirroring
+ * how {@link RelayWiringConfigurationTest} keeps {@code RelayWiringConfiguration}'s
+ * config-to-use-case mapping testable without one.
  */
 class RelayPropertiesTest {
 
     private static final RelayProperties.InitializationProperties DEFAULT_INITIALIZATION =
             new RelayProperties.InitializationProperties(5, Duration.ofHours(1));
 
+    private static RelayProperties relayProperties(
+            List<RelayProperties.CalendarConfig> calendars, List<RelayProperties.GoogleCredentials> googleCredentials) {
+        return new RelayProperties(
+                Duration.ofMinutes(5),
+                calendars,
+                Period.ofMonths(6),
+                DEFAULT_INITIALIZATION,
+                "organizer@example.com",
+                "business@example.com",
+                "relay@example.com",
+                "organizer@example.com",
+                googleCredentials);
+    }
+
     @Test
     void bind_givenRecurringEventHorizonAbsentFromConfiguration_thenDefaultsToSixMonths() {
-        var source = new MapConfigurationPropertySource(Map.of("relay.poll-interval", "5m"));
+        var source = new MapConfigurationPropertySource(baseProperties());
         var binder = new Binder(source);
 
         var relayProperties = binder.bind("relay", RelayProperties.class)
@@ -36,8 +52,9 @@ class RelayPropertiesTest {
 
     @Test
     void bind_givenRecurringEventHorizonConfigured_thenBindsConfiguredPeriod() {
-        var source = new MapConfigurationPropertySource(
-                Map.of("relay.poll-interval", "5m", "relay.recurring-event-horizon", "P3M"));
+        var properties = baseProperties();
+        properties.put("relay.recurring-event-horizon", "P3M");
+        var source = new MapConfigurationPropertySource(properties);
         var binder = new Binder(source);
 
         var relayProperties = binder.bind("relay", RelayProperties.class)
@@ -48,7 +65,7 @@ class RelayPropertiesTest {
 
     @Test
     void bind_givenInitializationAbsentFromConfiguration_thenDefaultsToBurstSizeFiveAndOneHourInterval() {
-        var source = new MapConfigurationPropertySource(Map.of("relay.poll-interval", "5m"));
+        var source = new MapConfigurationPropertySource(baseProperties());
         var binder = new Binder(source);
 
         var relayProperties = binder.bind("relay", RelayProperties.class)
@@ -60,13 +77,10 @@ class RelayPropertiesTest {
 
     @Test
     void bind_givenInitializationConfigured_thenBindsConfiguredBurstSizeAndInterval() {
-        var source = new MapConfigurationPropertySource(Map.of(
-                "relay.poll-interval",
-                "5m",
-                "relay.initialization.burst-size",
-                "10",
-                "relay.initialization.burst-interval",
-                "PT30M"));
+        var properties = baseProperties();
+        properties.put("relay.initialization.burst-size", "10");
+        properties.put("relay.initialization.burst-interval", "PT30M");
+        var source = new MapConfigurationPropertySource(properties);
         var binder = new Binder(source);
 
         var relayProperties = binder.bind("relay", RelayProperties.class)
@@ -78,17 +92,70 @@ class RelayPropertiesTest {
 
     @Test
     void create_givenExplicitRecurringEventHorizon_thenRelayPropertiesCarriesIt() {
-        var relayProperties =
-                new RelayProperties(Duration.ofMinutes(5), List.of(), Period.ofMonths(9), DEFAULT_INITIALIZATION);
+        var relayProperties = new RelayProperties(
+                Duration.ofMinutes(5),
+                List.of(),
+                Period.ofMonths(9),
+                DEFAULT_INITIALIZATION,
+                "organizer@example.com",
+                "business@example.com",
+                "relay@example.com",
+                "organizer@example.com",
+                List.of());
 
         assertThat(relayProperties.recurringEventHorizon()).isEqualTo(Period.ofMonths(9));
     }
 
     @Test
     void create_givenNullInitialization_thenDefaultsToBurstSizeFiveAndOneHourInterval() {
-        var relayProperties = new RelayProperties(Duration.ofMinutes(5), List.of(), Period.ofMonths(6), null);
+        var relayProperties = new RelayProperties(
+                Duration.ofMinutes(5),
+                List.of(),
+                Period.ofMonths(6),
+                null,
+                "organizer@example.com",
+                "business@example.com",
+                "relay@example.com",
+                "organizer@example.com",
+                List.of());
 
         assertThat(relayProperties.initialization()).isEqualTo(DEFAULT_INITIALIZATION);
+    }
+
+    @Test
+    void create_givenNullGoogleCredentials_thenDefaultsToEmptyList() {
+        var relayProperties = relayProperties(List.of(), null);
+
+        assertThat(relayProperties.googleCredentials()).isEmpty();
+    }
+
+    @Test
+    void create_givenEmptyGoogleCredentialsListAndNoGoogleCalendars_thenValid() {
+        var relayProperties = relayProperties(List.of(), List.of());
+
+        assertThat(relayProperties.googleCredentials()).isEmpty();
+        assertThat(relayProperties.calendars()).isEmpty();
+    }
+
+    @Test
+    void bind_givenGoogleCredentialsConfigured_thenBindsIdClientIdClientSecretAndRefreshToken() {
+        var properties = baseProperties();
+        properties.put("relay.google-credentials[0].id", "personal-google-account");
+        properties.put("relay.google-credentials[0].client-id", "client-id");
+        properties.put("relay.google-credentials[0].client-secret", "client-secret");
+        properties.put("relay.google-credentials[0].refresh-token", "refresh-token");
+        var source = new MapConfigurationPropertySource(properties);
+        var binder = new Binder(source);
+
+        var relayProperties = binder.bind("relay", RelayProperties.class)
+                .orElseThrow(() -> new IllegalStateException("relay properties failed to bind"));
+
+        assertThat(relayProperties.googleCredentials()).singleElement().satisfies(credentials -> {
+            assertThat(credentials.id()).isEqualTo("personal-google-account");
+            assertThat(credentials.clientId()).isEqualTo("client-id");
+            assertThat(credentials.clientSecret()).isEqualTo("client-secret");
+            assertThat(credentials.refreshToken()).isEqualTo("refresh-token");
+        });
     }
 
     /**
@@ -100,25 +167,12 @@ class RelayPropertiesTest {
      */
     @Test
     void bind_givenCalendarEntryWithoutTypeField_thenDefaultsToCaldav() {
-        var source = new MapConfigurationPropertySource(Map.of(
-                "relay.poll-interval",
-                "5m",
-                "relay.calendars[0].id",
-                "personal-nextcloud",
-                "relay.calendars[0].caldav-url",
-                "https://cloud.example.com/calendars/personal/",
-                "relay.calendars[0].caldav-username",
-                "user",
-                "relay.calendars[0].caldav-password",
-                "password",
-                "relay.calendars[0].organizer-email",
-                "organizer@example.com",
-                "relay.calendars[0].attendee-email",
-                "business@example.com",
-                "relay.calendars[0].from-address",
-                "relay@example.com",
-                "relay.calendars[0].reply-to-address",
-                "organizer@example.com"));
+        var properties = baseProperties();
+        properties.put("relay.calendars[0].id", "personal-nextcloud");
+        properties.put("relay.calendars[0].caldav-url", "https://cloud.example.com/calendars/personal/");
+        properties.put("relay.calendars[0].caldav-username", "user");
+        properties.put("relay.calendars[0].caldav-password", "password");
+        var source = new MapConfigurationPropertySource(properties);
         var binder = new Binder(source);
 
         var relayProperties = binder.bind("relay", RelayProperties.class)
@@ -130,18 +184,12 @@ class RelayPropertiesTest {
 
     @Test
     void bind_givenCalendarEntryWithTypeGoogle_thenBindsGoogleTypeAndFields() {
-        var source = new MapConfigurationPropertySource(Map.ofEntries(
-                Map.entry("relay.poll-interval", "5m"),
-                Map.entry("relay.calendars[0].id", "personal-google"),
-                Map.entry("relay.calendars[0].type", "google"),
-                Map.entry("relay.calendars[0].google-calendar-id", "someone@gmail.com"),
-                Map.entry("relay.calendars[0].google-client-id", "client-id"),
-                Map.entry("relay.calendars[0].google-client-secret", "client-secret"),
-                Map.entry("relay.calendars[0].google-refresh-token", "refresh-token"),
-                Map.entry("relay.calendars[0].organizer-email", "organizer@example.com"),
-                Map.entry("relay.calendars[0].attendee-email", "business@example.com"),
-                Map.entry("relay.calendars[0].from-address", "relay@example.com"),
-                Map.entry("relay.calendars[0].reply-to-address", "organizer@example.com")));
+        var properties = baseProperties();
+        properties.put("relay.calendars[0].id", "personal-google");
+        properties.put("relay.calendars[0].type", "google");
+        properties.put("relay.calendars[0].google-calendar-id", "someone@gmail.com");
+        properties.put("relay.calendars[0].google-credentials-id", "personal-google-account");
+        var source = new MapConfigurationPropertySource(properties);
         var binder = new Binder(source);
 
         var relayProperties = binder.bind("relay", RelayProperties.class)
@@ -150,9 +198,17 @@ class RelayPropertiesTest {
         assertThat(relayProperties.calendars()).singleElement().satisfies(calendar -> {
             assertThat(calendar.type()).isEqualTo(CalendarSourceType.GOOGLE);
             assertThat(calendar.googleCalendarId()).isEqualTo("someone@gmail.com");
-            assertThat(calendar.googleClientId()).isEqualTo("client-id");
-            assertThat(calendar.googleClientSecret()).isEqualTo("client-secret");
-            assertThat(calendar.googleRefreshToken()).isEqualTo("refresh-token");
+            assertThat(calendar.googleCredentialsId()).isEqualTo("personal-google-account");
         });
+    }
+
+    private static Map<String, String> baseProperties() {
+        var properties = new HashMap<String, String>();
+        properties.put("relay.poll-interval", "5m");
+        properties.put("relay.organizer-email", "organizer@example.com");
+        properties.put("relay.attendee-email", "business@example.com");
+        properties.put("relay.from-address", "relay@example.com");
+        properties.put("relay.reply-to-address", "organizer@example.com");
+        return properties;
     }
 }

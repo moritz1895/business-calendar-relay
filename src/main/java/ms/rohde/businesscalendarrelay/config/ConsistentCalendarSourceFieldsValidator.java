@@ -25,9 +25,7 @@ public class ConsistentCalendarSourceFieldsValidator
                     && isNotBlank(config.caldavUsername())
                     && isNotBlank(config.caldavPassword());
             case GOOGLE -> isNotBlank(config.googleCalendarId())
-                    && isNotBlank(config.googleClientId())
-                    && isNotBlank(config.googleClientSecret())
-                    && isNotBlank(config.googleRefreshToken());
+                    && isNotBlank(config.googleCredentialsId());
         };
     }
 

@@ -806,6 +806,19 @@ zwingend Teil dieser Spec.
 
 ## Konfiguration
 
+> **Stand nach `docs/features/relay-config-consolidation.md`:** Das unten
+> gezeigte Konfigurationsschema (`organizer-email`/`attendee-email`/
+> `from-address`/`reply-to-address` sowie `google-client-id`/
+> `google-client-secret`/`google-refresh-token` pro `relay.calendars[]`-
+> Eintrag) ist die Design-Rationale zum Zeitpunkt dieser Spec, inzwischen
+> aber überholt: die iMIP-Identität ist auf globale `relay.*`-Felder
+> gehoben, und die drei Google-Credential-Felder sind durch eine einzelne
+> `google-credentials-id`-Referenz auf eine neue, geteilte
+> `relay.google-credentials[]`-Liste ersetzt. Die historische Herleitung
+> unten bleibt unverändert stehen; die aktuell gültige Konfigurationsreferenz
+> steht in [`relay-config-consolidation.md`](relay-config-consolidation.md)
+> und [`docs/technical/google-calendar-setup.md`](../technical/google-calendar-setup.md).
+
 ### `application.yml` / README-Konfigurationstabelle — neue Umgebungsvariablen
 
 Analog zum bestehenden Muster pro `relay.calendars[]`-Eintrag (kein neuer

@@ -24,6 +24,7 @@ import ms.rohde.businesscalendarrelay.ports.inbound.PollAndRelaySourceCalendarUs
 import ms.rohde.businesscalendarrelay.ports.outbound.BlockerSink;
 import ms.rohde.businesscalendarrelay.ports.outbound.BurstBudget;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarSource;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -133,6 +134,7 @@ public class RelayWiringConfiguration {
             BurstBudget burstBudget,
             PlatformTransactionManager transactionManager) {
         var recurringEventHorizon = relayProperties.recurringEventHorizon();
+        var googleCredentials = relayProperties.googleCredentials();
         return relayProperties.calendars().stream()
                 .map(calendar -> buildUseCase(
                         calendar,
@@ -147,6 +149,11 @@ public class RelayWiringConfiguration {
                         googleCalendarSyncTokenJpaRepository,
                         burstBudget,
                         recurringEventHorizon,
+                        googleCredentials,
+                        relayProperties.organizerEmail(),
+                        relayProperties.attendeeEmail(),
+                        relayProperties.fromAddress(),
+                        relayProperties.replyToAddress(),
                         transactionManager))
                 .toList();
     }
@@ -164,6 +171,11 @@ public class RelayWiringConfiguration {
             GoogleCalendarSyncTokenJpaRepository googleCalendarSyncTokenJpaRepository,
             BurstBudget burstBudget,
             Period recurringEventHorizon,
+            List<RelayProperties.GoogleCredentials> googleCredentials,
+            String organizerEmail,
+            String attendeeEmail,
+            String fromAddress,
+            String replyToAddress,
             PlatformTransactionManager transactionManager) {
         CalendarSource calendarSource = switch (calendar.type()) {
             case CALDAV -> buildCalDavCalendarSource(
@@ -181,6 +193,7 @@ public class RelayWiringConfiguration {
                     recurringEventHorizon,
                     googleCalendarReplicaResourceJpaRepository,
                     googleCalendarSyncTokenJpaRepository,
+                    googleCredentials,
                     transactionManager);
         };
         var stateStore = new JpaStateStoreAdapter(relayStateJpaRepository, calendar.id());
@@ -192,10 +205,10 @@ public class RelayWiringConfiguration {
                 stateStore,
                 pendingCreationQueue,
                 burstBudget,
-                calendar.organizerEmail(),
-                calendar.attendeeEmail(),
-                calendar.fromAddress(),
-                calendar.replyToAddress(),
+                organizerEmail,
+                attendeeEmail,
+                fromAddress,
+                replyToAddress,
                 clock,
                 recurringEventHorizon);
     }
@@ -235,6 +248,7 @@ public class RelayWiringConfiguration {
             Period recurringEventHorizon,
             GoogleCalendarReplicaResourceJpaRepository googleCalendarReplicaResourceJpaRepository,
             GoogleCalendarSyncTokenJpaRepository googleCalendarSyncTokenJpaRepository,
+            List<RelayProperties.GoogleCredentials> googleCredentials,
             PlatformTransactionManager transactionManager) {
         var googleCalendarReplicaStore = new JpaGoogleCalendarReplicaStoreAdapter(
                 googleCalendarReplicaResourceJpaRepository,
@@ -242,18 +256,41 @@ public class RelayWiringConfiguration {
                 calendar.id(),
                 transactionManager);
         // @ConsistentCalendarSourceFields has already rejected any GOOGLE entry with a blank
-        // googleCalendarId/googleClientId/googleClientSecret/googleRefreshToken during Spring
-        // Boot property binding, so these @Nullable fields are guaranteed non-null here --
-        // requireNonNull documents that invariant at the point it's relied upon.
+        // googleCalendarId/googleCredentialsId during Spring Boot property binding, so
+        // calendar.googleCalendarId() is guaranteed non-null here -- requireNonNull documents
+        // that invariant at the point it's relied upon.
+        var resolvedCredentials = resolveGoogleCredentials(googleCredentials, calendar.googleCredentialsId());
         return new GoogleCalendarSourceAdapter(
                 httpClient,
                 Objects.requireNonNull(calendar.googleCalendarId()),
-                Objects.requireNonNull(calendar.googleClientId()),
-                Objects.requireNonNull(calendar.googleClientSecret()),
-                Objects.requireNonNull(calendar.googleRefreshToken()),
+                resolvedCredentials.clientId(),
+                resolvedCredentials.clientSecret(),
+                resolvedCredentials.refreshToken(),
                 clock,
                 recurringEventHorizon,
                 googleCalendarReplicaStore,
                 calendar.deltaSyncEnabled());
+    }
+
+    /**
+     * Resolves a {@code type: GOOGLE} calendar entry's {@code googleCredentialsId} against
+     * the globally configured {@code relay.google-credentials[]} list -- see
+     * {@code docs/features/relay-config-consolidation.md}.
+     *
+     * <p>{@link ConsistentGoogleCredentialsReferences} has already rejected, at Spring Boot
+     * property binding time, any {@code googleCredentialsId} that fails to resolve here, so
+     * an unresolved reference reaching this method is a bug in that validation rather than
+     * a reachable runtime state -- reported as {@link IllegalStateException} rather than
+     * silently building an adapter with a {@code null} credential.
+     */
+    private static RelayProperties.GoogleCredentials resolveGoogleCredentials(
+            List<RelayProperties.GoogleCredentials> googleCredentials, @Nullable String googleCredentialsId) {
+        return googleCredentials.stream()
+                .filter(credentials -> credentials.id().equals(googleCredentialsId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "googleCredentialsId '" + googleCredentialsId
+                                + "' did not resolve against relay.google-credentials -- "
+                                + "ConsistentGoogleCredentialsReferences should have rejected this at startup"));
     }
 }

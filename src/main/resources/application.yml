@@ -65,6 +65,14 @@ management:
 
 relay:
   poll-interval: ${RELAY_POLL_INTERVAL:5m}
+  # The global iMIP identity -- one set, shared by every configured calendar regardless
+  # of type, deliberately with no per-calendar override (see
+  # docs/features/relay-config-consolidation.md). Required, no default -- same "must be
+  # supplied by the deployer" pattern as SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD above.
+  organizer-email: ${RELAY_ORGANIZER_EMAIL}
+  attendee-email: ${RELAY_ATTENDEE_EMAIL}
+  from-address: ${RELAY_FROM_ADDRESS}
+  reply-to-address: ${RELAY_REPLY_TO_ADDRESS}
   # `recurring-event-horizon` bounds how far into the future a recurring source event's
   # occurrence may start and still be eligible for its first blocker creation; it is a
   # single value shared across every configured calendar, like `poll-interval` above,
@@ -76,6 +84,17 @@ relay:
   # initialization:
   #   burst-size: ${RELAY_INITIALIZATION_BURST_SIZE:5}
   #   burst-interval: ${RELAY_INITIALIZATION_BURST_INTERVAL:PT1H}
+  # `google-credentials` is deliberately left empty here -- a deployment without any
+  # `type: google` calendar needs no entry. Shape of one entry (one per Google account,
+  # shared by any number of `type: google` calendars referencing it via
+  # `google-credentials-id`, see docs/features/relay-config-consolidation.md):
+  #
+  # google-credentials:
+  #   - id: personal-google-account
+  #     client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
+  #     client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
+  #     refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
+  #
   # `calendars` is deliberately left empty here so the application starts cleanly with
   # zero source calendars configured (e.g. in CI). Real deployments supply their own
   # calendar list, one entry per private source calendar, via an external config file
@@ -87,11 +106,11 @@ relay:
   #     caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
   #     caldav-username: ${CALDAV_PERSONAL_USERNAME}
   #     caldav-password: ${CALDAV_PERSONAL_PASSWORD}
-  #     organizer-email: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
-  #     attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
-  #     from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
-  #     reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
   #     # delta-sync-enabled: true   -- Default; auf false setzen, um für diesen
   #     # einen Kalender dauerhaft auf die vollständige calendar-query-Anfrage
   #     # zurückzufallen (z. B. bei einem Server, der sync-collection fehlerhaft
   #     # implementiert, aber nicht sauber als nicht unterstützt erkennbar ist).
+  #   - id: personal-google
+  #     type: google
+  #     google-calendar-id: ${GOOGLE_PERSONAL_CALENDAR_ID}
+  #     google-credentials-id: personal-google-account

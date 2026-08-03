@@ -1,20 +1,35 @@
 # Copy this file to config/relay-calendars.yml (git-ignored, see .gitignore) and add
-# one entry per private source calendar. Credentials and per-calendar addresses stay in
-# .env (see .env.example, mapped through in docker-compose.yml) and are only referenced
-# here via ${...} placeholders -- never put real credentials directly into this file.
+# one entry per private source calendar. Credentials stay in .env (see .env.example,
+# mapped through in docker-compose.yml) and are only referenced here via ${...}
+# placeholders -- never put real credentials directly into this file.
 #
 # `id` is the persistence key for this calendar's relay state -- never rename it once
 # events have been relayed under it (see README.md "Quellkalender (relay.calendars)").
+#
+# The iMIP identity (organizer-email/attendee-email/from-address/reply-to-address) is
+# global, set once at relay-level below, not per calendar entry -- see
+# docs/features/relay-config-consolidation.md.
 relay:
+  organizer-email: ${RELAY_ORGANIZER_EMAIL}
+  attendee-email: ${RELAY_ATTENDEE_EMAIL}
+  from-address: ${RELAY_FROM_ADDRESS}
+  reply-to-address: ${RELAY_REPLY_TO_ADDRESS}
+
+  # One named Google OAuth credential set per Google account, referenced by any number
+  # of type: google calendar entries below via google-credentials-id -- see
+  # docs/technical/google-calendar-setup.md for the one-time OAuth Playground consent
+  # flow that produces client-id/client-secret/refresh-token.
+  # google-credentials:
+  #   - id: personal-google-account
+  #     client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
+  #     client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
+  #     refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
+
   calendars:
     - id: personal-nextcloud
       caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/personal/
       caldav-username: ${CALDAV_PERSONAL_USERNAME}
       caldav-password: ${CALDAV_PERSONAL_PASSWORD}
-      organizer-email: ${RELAY_PERSONAL_ORGANIZER_EMAIL}
-      attendee-email: ${RELAY_PERSONAL_ATTENDEE_EMAIL}
-      from-address: ${RELAY_PERSONAL_FROM_ADDRESS}
-      reply-to-address: ${RELAY_PERSONAL_REPLY_TO_ADDRESS}
       # delta-sync-enabled: true   -- default; set to false to permanently fall back to
       # the full calendar-query request for this one calendar (e.g. a server that
       # implements sync-collection incorrectly but isn't cleanly detectable as
@@ -24,22 +39,18 @@ relay:
     #   caldav-url: https://cloud.example.com/remote.php/dav/calendars/user/work/
     #   caldav-username: ${CALDAV_WORK_USERNAME}
     #   caldav-password: ${CALDAV_WORK_PASSWORD}
-    #   organizer-email: ${RELAY_WORK_ORGANIZER_EMAIL}
-    #   attendee-email: ${RELAY_WORK_ATTENDEE_EMAIL}
-    #   from-address: ${RELAY_WORK_FROM_ADDRESS}
-    #   reply-to-address: ${RELAY_WORK_REPLY_TO_ADDRESS}
 
     # A Google Calendar source coexisting with the CalDAV entries above -- `type: google`
-    # is the only thing that distinguishes it. Credentials come from a Google Cloud
-    # project you create yourself; see docs/technical/google-calendar-setup.md for the
-    # one-time OAuth Playground consent flow that produces google-refresh-token.
-    # - id: personal-google
+    # is the only thing that distinguishes it. `google-credentials-id` references an
+    # entry under relay.google-credentials above; the same credentials-id can be reused
+    # by several type: google entries of the same Google account, each with its own
+    # google-calendar-id.
+    # - id: personal-google-primary
     #   type: google
     #   google-calendar-id: ${GOOGLE_PERSONAL_CALENDAR_ID}
-    #   google-client-id: ${GOOGLE_PERSONAL_CLIENT_ID}
-    #   google-client-secret: ${GOOGLE_PERSONAL_CLIENT_SECRET}
-    #   google-refresh-token: ${GOOGLE_PERSONAL_REFRESH_TOKEN}
-    #   organizer-email: ${RELAY_GOOGLE_ORGANIZER_EMAIL}
-    #   attendee-email: ${RELAY_GOOGLE_ATTENDEE_EMAIL}
-    #   from-address: ${RELAY_GOOGLE_FROM_ADDRESS}
-    #   reply-to-address: ${RELAY_GOOGLE_REPLY_TO_ADDRESS}
+    #   google-credentials-id: personal-google-account
+
+    # - id: personal-google-secondary
+    #   type: google
+    #   google-calendar-id: ${GOOGLE_SECONDARY_CALENDAR_ID}
+    #   google-credentials-id: personal-google-account
