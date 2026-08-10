@@ -272,6 +272,10 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
             }
         }
         resetReplica(result.nextSyncToken(), upserted);
+        LOG.info(
+                "Initial events.list sync for Google Calendar {}: {} event(s) received over the wire",
+                googleCalendarId,
+                upserted.size());
     }
 
     private void performIncrementalSync(String accessToken, String token) {
@@ -294,6 +298,13 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
             }
         }
         applyReplicaDelta(result.nextSyncToken(), upserted, removedEventIds);
+        LOG.info(
+                "Incremental events.list sync-token sync for Google Calendar {}: {} changed, {} removed event(s)"
+                        + " over the wire (the subsequent \"Read N source event(s)\" log line still reports the"
+                        + " full, locally reconstructed snapshot size, not this delta)",
+                googleCalendarId,
+                upserted.size(),
+                removedEventIds.size());
     }
 
     private void requireNewSyncToken(EventsListResult result) {

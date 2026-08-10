@@ -281,6 +281,10 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
         }
         var result = parseSyncCollectionResponse(response.body());
         resetReplica(result.newSyncToken(), result.changedResources());
+        LOG.info(
+                "Initial sync-collection for {}: {} resource(s) received over the wire",
+                calendarCollectionUri,
+                result.changedResources().size());
     }
 
     private void performIncrementalSync(String token) {
@@ -288,6 +292,13 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
         if (response.statusCode() == MULTI_STATUS) {
             var result = parseSyncCollectionResponse(response.body());
             applyReplicaDelta(result.newSyncToken(), result.changedResources(), result.removedHrefs());
+            LOG.info(
+                    "Incremental sync-collection for {}: {} changed, {} removed resource(s) over the wire"
+                            + " (the subsequent \"Read N source event(s)\" log line still reports the full,"
+                            + " locally reconstructed snapshot size, not this delta)",
+                    calendarCollectionUri,
+                    result.changedResources().size(),
+                    result.removedHrefs().size());
             return;
         }
         if (isInvalidSyncTokenResponse(response)) {
@@ -625,11 +636,32 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
     private List<VEvent> parseVEvents(String calendarData) {
         Calendar calendar;
         try {
-            calendar = new CalendarBuilder().build(new StringReader(calendarData));
+            calendar = new CalendarBuilder().build(new StringReader(restoreLineFolding(calendarData)));
         } catch (IOException | ParserException e) {
             throw new CalDavCalendarSourceException("Malformed calendar-data from " + calendarCollectionUri, e);
         }
         return calendar.getComponents(Component.VEVENT);
+    }
+
+    /**
+     * Re-establishes RFC 5545 {@code CRLF}-based line folding, lost when {@code
+     * calendar-data} was extracted from the multistatus response as XML element text
+     * content. RFC 5545 folds a long property value across physical lines as {@code CRLF}
+     * followed by a single leading whitespace character on the continuation line; XML 1.0
+     * (§2.11) mandates that a conformant parser normalize every {@code CRLF}/{@code CR}
+     * in element text content down to a single {@code LF} before handing it to the
+     * application, which is exactly what {@link #extractCalendarDataBlobs}/{@link
+     * #parseSyncCollectionResponse} do via {@code getTextContent()} -- so every {@code
+     * calendarData} value reaching this method is guaranteed already {@code LF}-only, never
+     * a raw {@code CR}/{@code CRLF}, and a plain one-way replace is sufficient. ical4j's
+     * parser only recognizes {@code CRLF} + whitespace as a fold -- a bare {@code LF} +
+     * whitespace continuation line is instead read as a bogus new content line, which
+     * silently corrupts parsing of whatever property follows it in the same {@code VEVENT}
+     * (observed directly: real calendar entries with a folded, over-75-octet {@code
+     * SUMMARY}/{@code LOCATION} lost their immediately following {@code DTSTART}).
+     */
+    private static String restoreLineFolding(String calendarData) {
+        return calendarData.replace("\n", "\r\n");
     }
 
     /**
@@ -733,11 +765,11 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
 
     private SourceEvent toSingleSourceEvent(String uid, VEvent vevent) {
         var dtStart = requireDtStart(uid, vevent);
-        var dtEnd = requireDtEnd(uid, vevent);
+        var start = toZonedDateTime(uid, dtStart);
         return new SourceEvent(
                 uid,
-                toZonedDateTime(uid, dtStart),
-                toZonedDateTime(uid, dtEnd),
+                start,
+                resolveEnd(uid, vevent, start),
                 isDateOnlyValue(dtStart),
                 busy(vevent),
                 false,
@@ -747,10 +779,9 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
     private List<SourceEvent> expandRecurringSeries(
             String uid, VEvent master, Property rruleProperty, List<VEvent> overrides, ZonedDateTime now) {
         var masterDtStart = requireDtStart(uid, master);
-        var masterDtEnd = requireDtEnd(uid, master);
         var masterForm = formOf(masterDtStart);
         var masterStart = toZonedDateTime(uid, masterDtStart);
-        var masterEnd = toZonedDateTime(uid, masterDtEnd);
+        var masterEnd = resolveEnd(uid, master, masterStart);
         var masterDuration = Duration.between(masterStart, masterEnd);
         var masterAllDay = masterForm.valueIsDate();
         var masterBusy = busy(master);
@@ -787,11 +818,11 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                     continue;
                 }
                 var overrideDtStart = requireDtStart(uid, override);
-                var overrideDtEnd = requireDtEnd(uid, override);
+                var overrideStart = toZonedDateTime(uid, overrideDtStart);
                 result.add(new SourceEvent(
                         sourceUid,
-                        toZonedDateTime(uid, overrideDtStart),
-                        toZonedDateTime(uid, overrideDtEnd),
+                        overrideStart,
+                        resolveEnd(uid, override, overrideStart),
                         isDateOnlyValue(overrideDtStart),
                         busy(override),
                         true,
@@ -860,9 +891,23 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                 .orElseThrow(() -> new CalDavCalendarSourceException("VEVENT " + uid + " is missing DTSTART"));
     }
 
-    private DtEnd<?> requireDtEnd(String uid, VEvent vevent) {
-        return vevent.<DtEnd<?>>getProperty(Property.DTEND)
-                .orElseThrow(() -> new CalDavCalendarSourceException("VEVENT " + uid + " is missing DTEND"));
+    /**
+     * Resolves a {@code VEVENT}'s end instant from either an explicit {@code DTEND} or,
+     * per RFC 5545's {@code DTEND}/{@code DURATION} mutual-exclusion rule, a {@code
+     * DURATION} relative to {@code start} -- real source calendars carry long-lived
+     * yearly-recurring entries (e.g. birthday reminders from an old CalDAV client) that
+     * only ever set {@code DURATION}, never {@code DTEND}.
+     */
+    private ZonedDateTime resolveEnd(String uid, VEvent vevent, ZonedDateTime start) {
+        var dtEnd = vevent.<DtEnd<?>>getProperty(Property.DTEND);
+        if (dtEnd.isPresent()) {
+            return toZonedDateTime(uid, dtEnd.get());
+        }
+        var duration = vevent.<net.fortuna.ical4j.model.property.Duration>getProperty(Property.DURATION);
+        if (duration.isPresent()) {
+            return start.plus(duration.get().getDuration());
+        }
+        throw new CalDavCalendarSourceException("VEVENT " + uid + " has neither DTEND nor DURATION");
     }
 
     private boolean isDateOnlyValue(DateProperty<?> dateProperty) {
