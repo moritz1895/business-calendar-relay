@@ -38,15 +38,25 @@ noch ohne jede Relay-Identität.
 | `busy` | `true`, wenn der Termin im Quellkalender Zeit blockiert (nicht als `TRANSP:TRANSPARENT` markiert ist), `false` sonst. |
 | `recurring` | `true`, wenn dieses Vorkommen aus einer wiederkehrenden Serie stammt, unabhängig davon, ob es individuell überschrieben wurde. Rein informationell: fließt in den Erstellungs-Filter (Wiederholungs-Zeitfenster) ein, wird aber nie für Änderungserkennung verglichen. |
 | `cancelled` | `true`, wenn der zugrunde liegende Termin (bzw. bei einer Serie: deren Master) als storniert markiert ist. |
+| `sourceTitle` | Der Originaltitel des Quelltermins (CalDAV `SUMMARY` bzw. Google `summary`), `null` bei einem titellosen Quelltermin. Dient ausschließlich als Nutzlast für einen Hinweis im Mailtext der iMIP-Einladung (siehe unten) — kein Bestandteil des gerenderten Blockers, kein Vergleichsfeld für Erstellungs-Filter oder Änderungserkennung. |
 
-`SourceEvent` trägt bewusst weiterhin keine inhaltlichen Informationen —
-keinen Titel, keine Beschreibung, keinen Organisator, keine Teilnehmer. Die
-vier booleschen Felder oben tragen ausschließlich Fakten, die der
-Erstellungs-Filter und die Änderungserkennung brauchen (siehe
-"Domänenregeln" unten), keine inhaltliche Erweiterung. Das bleibt zugleich
-eine Datenschutzeigenschaft: Der Quellkalender-Port muss nie mehr über
-einen Termin preisgeben, als für die Blocker-Erzeugung und die
-Filterentscheidung nötig ist.
+`SourceEvent` trägt abgesehen von `sourceTitle` bewusst weiterhin keine
+inhaltlichen Informationen — keine Beschreibung, keinen Organisator, keine
+Teilnehmer. Die vier booleschen Felder oben tragen ausschließlich Fakten,
+die der Erstellungs-Filter und die Änderungserkennung brauchen (siehe
+"Domänenregeln" unten), keine inhaltliche Erweiterung. Das bleibt für diese
+vier Felder zugleich eine Datenschutzeigenschaft: Der Quellkalender-Port
+muss nie mehr über einen Termin preisgeben, als für die Blocker-Erzeugung
+und die Filterentscheidung nötig ist. `sourceTitle` ist davon eine
+bewusste, eng begrenzte Ausnahme, auf Wunsch des Kalenderbetreibers
+eingeführt: Es trägt den Originaltitel des Quelltermins ausschließlich als
+Nutzlast für einen menschenlesbaren Hinweis im Mailtext der
+iMIP-Einladung (siehe
+`docs/features/source-title-hint-in-imip-mail-body.md`) — der gerenderte
+Blocker im Geschäftskalender bleibt davon unberührt und weiterhin
+titellos (siehe "Blocker sind titellos by design" unten). Das Feld ist
+nullable: Ein titelloser Quelltermin bleibt weiterhin vollständig
+unterstützt, lediglich ohne Hinweiszeile im Mailtext.
 
 #### Zusammengesetzter `sourceUid` für wiederkehrende Termine
 
@@ -81,6 +91,7 @@ Ein einzelnes Blocker-Vorkommen, bereit zur Umwandlung in iMIP/ICS-Text.
 | `start`, `end` | Das Zeitfenster, das im Business-Kalender geblockt wird. |
 | `organizerEmail` | Die Organisator-Adresse des Blockers. |
 | `attendeeEmail` | Die Adresse des dienstlichen Postfachs, das als Teilnehmer eingetragen wird. |
+| `sourceTitle` | Reiner Mailtext-Transportbehälter für den Originaltitel des Quelltermins, durchgereicht bis zur `BlockerMail`-Erzeugung; wird von `ImipCalendarRenderer` nie gelesen. |
 
 ### `RelayState`
 
@@ -110,7 +121,11 @@ Ausprägungen, die alle die Felder `sourceUid`, `blockerUid`, `sequence`,
 `busy` und `cancelled` vom auslösenden `SourceEvent`, damit die
 Anwendungsschicht nach erfolgreichem Versand die `lastKnown*`-Felder des zu
 speichernden `RelayState` befüllen kann, ohne den Quelltermin erneut zu
-lesen:
+lesen; ebenso tragen sie `sourceTitle` vom auslösenden `SourceEvent`, damit
+die Anwendungsschicht ihn bis zum Mailversand durchreichen kann, ohne den
+Quelltermin erneut zu lesen — anders als bei den drei genannten Feldern
+fließt `sourceTitle` dabei aber in keinen `lastKnown*`-Wert ein, da
+`RelayState` es nicht persistiert (siehe unten):
 
 - **`Create`** — für einen Quelltermin ohne vorherigen `RelayState`, der
   zusätzlich den Erstellungs-Filter besteht (siehe Domänenregeln unten): ein
@@ -128,7 +143,10 @@ lesen:
   existiert). Trägt bewusst kein `allDay`/`busy`/`cancelled` — eine Absage
   braucht keinen `lastKnown*`-Stand mehr, da der `RelayState`-Eintrag danach
   nur noch auf `active = false` gesetzt, aber nicht mit neuen Werten
-  überschrieben wird.
+  überschrieben wird. Ebenso trägt `Cancel` bewusst kein `sourceTitle` —
+  zum Zeitpunkt der Absage existiert kein aktueller Quelltermin mehr, aus
+  dem sich ein Titel ableiten ließe, da der Termin ja gerade aus dem
+  Quellkalender verschwunden ist.
 
 `RelayAction` trägt bewusst keine Angabe zur iMIP-Methode (`REQUEST`/
 `CANCEL`) oder zu einem port-spezifischen Typ — das ist eine reine
@@ -383,9 +401,19 @@ zusammenhängende fachliche Gründe:
 `ImipCalendarRenderer` setzt `SUMMARY` immer auf das feste Literal
 `"Privater Blocker"`. Kein Feld des Quelltermins beeinflusst diesen Wert —
 nur die Zeitfensterinformation (Frei/Belegt) wird gespiegelt, niemals der
-fachliche Anlass. Diese Regel ist untrennbar mit `SourceEvent`s bewusst
-minimalem Umfang verbunden: Da `SourceEvent` ohnehin keinen Titel trägt,
-kann ein Blocker gar nicht anders als titellos gerendert werden.
+fachliche Anlass. Diese Garantie beruht darauf, dass `ImipCalendarRenderer`
+`BlockerEvent.sourceTitle()` an keiner Stelle liest (durch einen
+Regressionstest abgesichert) und dass der Mail-`Subject`-Header
+unabhängig von `sourceTitle` bei den festen Literalen
+`"Privater Blocker"` bzw. `"Abgesagt: Privater Blocker"` bleibt — nicht
+mehr darauf, dass `SourceEvent` gar keinen Titel trägt.
+
+`SourceEvent` und `BlockerEvent` führen inzwischen den Originaltitel des
+Quelltermins mit (`sourceTitle`), aber ausschließlich als Nutzlast für
+einen menschenlesbaren Hinweis im Mailtext der iMIP-Einladung — nie für
+den ICS-Text oder den `Subject`-Header. Siehe
+`docs/features/source-title-hint-in-imip-mail-body.md` für die
+vollständige Feature-Beschreibung.
 
 ### Erstellungs-Filter — Gate ausschließlich für die Neuanlage
 
@@ -447,7 +475,11 @@ da sie gemeinsam den für Outlook relevanten Zustand des Blockers
 beschreiben (Zeitfenster plus die Attribute, die eine erneute Anfrage
 rechtfertigen). `recurring` bleibt bewusst **kein** Vergleichsfeld — ob ein
 Vorkommen aus einer Serie stammt, ist reine Herkunftsinformation ohne
-Auswirkung auf den gerenderten Blocker.
+Auswirkung auf den gerenderten Blocker. `sourceTitle` bleibt aus
+demselben Grund bewusst **kein** Vergleichsfeld: Eine reine Titeländerung
+am Quelltermin (Zeitfenster und Flags unverändert) löst keinen erneuten
+Versand aus — `RelayState` persistiert dafür auch keinen
+`lastKnownSourceTitle`.
 
 Eine wichtige Konsequenz: Ein Termin, der nachträglich z. B. auf
 "nicht beschäftigt" umgestellt wird, löst dadurch ein Update aus, obwohl er

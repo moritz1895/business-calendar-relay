@@ -64,6 +64,16 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
     private static final String HTML_BODY =
             "<html><body><p>Diese Nachricht enthaelt eine Kalender-Einladung.</p></body></html>";
 
+    /**
+     * Mail-text-only hint of the private source event's original title, appended for a
+     * {@code REQUEST} mail whenever {@link BlockerMail#sourceTitle()} is present -- see
+     * {@code docs/features/source-title-hint-in-imip-mail-body.md}. Deliberately never
+     * read into {@link #TITLE}/{@link #CANCELLED_SUBJECT} or into the {@code icsText}:
+     * the only place this ever surfaces is this human-readable body, which Outlook
+     * treats as an email preview, never as calendar data.
+     */
+    private static final String TITLE_HINT_LABEL = "Urspruenglicher Titel im privaten Kalender: ";
+
     private final JavaMailSender mailSender;
 
     public SmtpBlockerSinkAdapter(JavaMailSender mailSender) {
@@ -81,7 +91,7 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
             message.setSubject(subject, StandardCharsets.UTF_8.name());
 
             var mixed = new MimeMultipart("mixed");
-            mixed.addBodyPart(alternativeBodyPart());
+            mixed.addBodyPart(alternativeBodyPart(mail));
             mixed.addBodyPart(calendarBodyPart(mail));
 
             message.setContent(mixed);
@@ -95,12 +105,12 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
         }
     }
 
-    private MimeBodyPart alternativeBodyPart() throws MessagingException {
+    private MimeBodyPart alternativeBodyPart(BlockerMail mail) throws MessagingException {
         var textPart = new MimeBodyPart();
-        textPart.setText(PLAIN_TEXT_BODY, StandardCharsets.UTF_8.name(), "plain");
+        textPart.setText(plainTextBody(mail), StandardCharsets.UTF_8.name(), "plain");
 
         var htmlPart = new MimeBodyPart();
-        htmlPart.setText(HTML_BODY, StandardCharsets.UTF_8.name(), "html");
+        htmlPart.setText(htmlBody(mail), StandardCharsets.UTF_8.name(), "html");
 
         var alternative = new MimeMultipart("alternative");
         alternative.addBodyPart(textPart);
@@ -109,6 +119,38 @@ public final class SmtpBlockerSinkAdapter implements BlockerSink {
         var alternativePart = new MimeBodyPart();
         alternativePart.setContent(alternative);
         return alternativePart;
+    }
+
+    private String plainTextBody(BlockerMail mail) {
+        if (mail.sourceTitle() == null) {
+            return PLAIN_TEXT_BODY;
+        }
+        return PLAIN_TEXT_BODY + "\n\n" + TITLE_HINT_LABEL + mail.sourceTitle();
+    }
+
+    private String htmlBody(BlockerMail mail) {
+        if (mail.sourceTitle() == null) {
+            return HTML_BODY;
+        }
+        return "<html><body><p>Diese Nachricht enthaelt eine Kalender-Einladung.</p>"
+                + "<p><strong>" + escapeHtml(TITLE_HINT_LABEL) + "</strong>"
+                + escapeHtml(mail.sourceTitle()) + "</p></body></html>";
+    }
+
+    private String escapeHtml(String value) {
+        var builder = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            var c = value.charAt(i);
+            switch (c) {
+                case '&' -> builder.append("&amp;");
+                case '<' -> builder.append("&lt;");
+                case '>' -> builder.append("&gt;");
+                case '"' -> builder.append("&quot;");
+                case '\'' -> builder.append("&#39;");
+                default -> builder.append(c);
+            }
+        }
+        return builder.toString();
     }
 
     private MimeBodyPart calendarBodyPart(BlockerMail mail) throws MessagingException {

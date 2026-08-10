@@ -21,7 +21,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenNewSourceEvent_thenReturnsCreateActionWithDeterministicBlockerUidAndSequenceZero() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -37,7 +37,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenNewSourceEvent_thenCreateActionCarriesAllDayBusyAndCancelledFromEvent() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -51,8 +51,8 @@ class RelayDiffPlannerTest {
     @Test
     void plan_givenTwoNewSourceEvents_thenGeneratesDistinctBlockerUids() {
         var currentEvents = List.of(
-                new SourceEvent("source-1", START, END, false, true, false, false),
-                new SourceEvent("source-2", START, END, false, true, false, false));
+                new SourceEvent("source-1", START, END, false, true, false, false, null),
+                new SourceEvent("source-2", START, END, false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -62,7 +62,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenSameNewSourceEventPlannedTwice_thenGeneratesSameBlockerUidBothTimes() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, null));
 
         var firstAttempt = planner.plan(currentEvents, List.of(), NOW, HORIZON);
         var retryAfterUnpersistedState = planner.plan(currentEvents, List.of(), NOW, HORIZON);
@@ -76,7 +76,7 @@ class RelayDiffPlannerTest {
     @Test
     void plan_givenChangedWindow_thenReturnsUpdateActionReusingBlockerUidAndIncrementingSequence() {
         var newEnd = END.plusMinutes(30);
-        var currentEvents = List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 2, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -93,7 +93,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenUnchangedWindowOnActiveState_thenReturnsNoAction() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -119,7 +119,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenPreviouslyCancelledEventReappearsWithUnchangedWindow_thenReturnsUpdateActionRegardless() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 3, START, END, false, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -136,9 +136,9 @@ class RelayDiffPlannerTest {
     @Test
     void plan_givenMixedCreateUpdateNoOpAndCancel_thenReturnsOnlyTheRequiredActions() {
         var currentEvents = List.of(
-                new SourceEvent("source-new", START, END, false, true, false, false),
-                new SourceEvent("source-changed", START, END.plusMinutes(15), false, true, false, false),
-                new SourceEvent("source-unchanged", START, END, false, true, false, false));
+                new SourceEvent("source-new", START, END, false, true, false, false, null),
+                new SourceEvent("source-changed", START, END.plusMinutes(15), false, true, false, false, null),
+                new SourceEvent("source-unchanged", START, END, false, true, false, false, null));
         var priorStates = List.of(
                 new RelayState("source-changed", "blocker-changed", 0, START, END, true, false, true, false),
                 new RelayState("source-unchanged", "blocker-unchanged", 0, START, END, true, false, true, false),
@@ -192,7 +192,7 @@ class RelayDiffPlannerTest {
     void plan_givenNewEventWithPastStart_thenNoActionIsEmitted() {
         var pastStart = NOW.minusDays(1);
         var pastEnd = pastStart.plusHours(1);
-        var currentEvents = List.of(new SourceEvent("source-1", pastStart, pastEnd, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", pastStart, pastEnd, false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -201,7 +201,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenNewEventStartingExactlyAtNow_thenIsEligibleAndReturnsCreateAction() {
-        var currentEvents = List.of(new SourceEvent("source-1", NOW, NOW.plusHours(1), false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", NOW, NOW.plusHours(1), false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -210,7 +210,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenNewAllDayEvent_thenNoActionIsEmitted() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, true, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, true, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -219,7 +219,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenNewTransparentEvent_thenNoActionIsEmitted() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, false, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, false, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -228,7 +228,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenNewCancelledEvent_thenNoActionIsEmitted() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, true));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, true, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -239,7 +239,7 @@ class RelayDiffPlannerTest {
     void plan_givenNewEventStartingOnSaturday_thenNoActionIsEmitted() {
         var saturdayStart = ZonedDateTime.of(2026, 7, 25, 10, 0, 0, 0, BERLIN);
         var currentEvents =
-                List.of(new SourceEvent("source-1", saturdayStart, saturdayStart.plusHours(1), false, true, false, false));
+                List.of(new SourceEvent("source-1", saturdayStart, saturdayStart.plusHours(1), false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -250,7 +250,7 @@ class RelayDiffPlannerTest {
     void plan_givenNewEventStartingOnSunday_thenNoActionIsEmitted() {
         var sundayStart = ZonedDateTime.of(2026, 7, 26, 10, 0, 0, 0, BERLIN);
         var currentEvents =
-                List.of(new SourceEvent("source-1", sundayStart, sundayStart.plusHours(1), false, true, false, false));
+                List.of(new SourceEvent("source-1", sundayStart, sundayStart.plusHours(1), false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -261,7 +261,7 @@ class RelayDiffPlannerTest {
     void plan_givenActiveStateWhoseSourceEventStartMovedToSaturday_thenStillReturnsUpdateAction() {
         var saturdayStart = ZonedDateTime.of(2026, 7, 25, 10, 0, 0, 0, BERLIN);
         var saturdayEnd = saturdayStart.plusHours(1);
-        var currentEvents = List.of(new SourceEvent("source-1", saturdayStart, saturdayEnd, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", saturdayStart, saturdayEnd, false, true, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -273,7 +273,7 @@ class RelayDiffPlannerTest {
     @Test
     void plan_givenNewRecurringEventBeyondHorizon_thenNoActionIsEmitted() {
         var farStart = NOW.plus(HORIZON).plusDays(1);
-        var currentEvents = List.of(new SourceEvent("source-1", farStart, farStart.plusHours(1), false, true, true, false));
+        var currentEvents = List.of(new SourceEvent("source-1", farStart, farStart.plusHours(1), false, true, true, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -284,7 +284,7 @@ class RelayDiffPlannerTest {
     void plan_givenNewRecurringEventWithinHorizon_thenReturnsCreateAction() {
         var withinHorizonStart = NOW.plus(HORIZON).minusDays(1);
         var currentEvents = List.of(new SourceEvent(
-                "source-1", withinHorizonStart, withinHorizonStart.plusHours(1), false, true, true, false));
+                "source-1", withinHorizonStart, withinHorizonStart.plusHours(1), false, true, true, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -295,7 +295,7 @@ class RelayDiffPlannerTest {
     void plan_givenNewNonRecurringEventFarInFuture_thenReturnsCreateActionWithNoUpperHorizonBound() {
         var farStart = NOW.plus(HORIZON).plusYears(5);
         var currentEvents =
-                List.of(new SourceEvent("source-1", farStart, farStart.plusHours(1), false, true, false, false));
+                List.of(new SourceEvent("source-1", farStart, farStart.plusHours(1), false, true, false, false, null));
 
         var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
 
@@ -308,7 +308,7 @@ class RelayDiffPlannerTest {
     void plan_givenEventFailingEveryGateConditionButHasActivePriorState_thenStillReturnsUpdateAction() {
         var pastStart = NOW.minusDays(1);
         var pastEnd = pastStart.plusHours(1);
-        var gateFailingEvent = new SourceEvent("source-1", pastStart, pastEnd, true, false, true, true);
+        var gateFailingEvent = new SourceEvent("source-1", pastStart, pastEnd, true, false, true, true, null);
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 2, START, END, true, false, true, false));
 
         var actions = planner.plan(List.of(gateFailingEvent), priorStates, NOW, HORIZON);
@@ -326,7 +326,7 @@ class RelayDiffPlannerTest {
     void plan_givenEventFailingEveryGateConditionButHasInactivePriorState_thenStillReturnsResurrectionUpdateAction() {
         var pastStart = NOW.minusDays(1);
         var pastEnd = pastStart.plusHours(1);
-        var gateFailingEvent = new SourceEvent("source-1", pastStart, pastEnd, true, false, true, true);
+        var gateFailingEvent = new SourceEvent("source-1", pastStart, pastEnd, true, false, true, true, null);
         var priorStates =
                 List.of(new RelayState("source-1", "blocker-1", 2, pastStart, pastEnd, false, false, true, false));
 
@@ -343,7 +343,7 @@ class RelayDiffPlannerTest {
     void plan_givenEventFailingEveryGateConditionAndUnchangedFromInactivePriorState_thenStillTreatedAsUpdateNotSkipped() {
         var pastStart = NOW.minusDays(1);
         var pastEnd = pastStart.plusHours(1);
-        var gateFailingEvent = new SourceEvent("source-1", pastStart, pastEnd, true, false, true, true);
+        var gateFailingEvent = new SourceEvent("source-1", pastStart, pastEnd, true, false, true, true, null);
         var priorStates =
                 List.of(new RelayState("source-1", "blocker-1", 2, pastStart, pastEnd, false, true, false, true));
 
@@ -357,7 +357,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenAllDayFlipAloneWithUnchangedWindow_thenReturnsUpdateAction() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, true, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, true, true, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -369,7 +369,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenBusyFlipAloneWithUnchangedWindow_thenReturnsUpdateAction() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, false, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, false, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -380,7 +380,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenCancelledFlipAloneWithUnchangedWindow_thenReturnsUpdateAction() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, true));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, true, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -391,7 +391,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenAllDayBusyAndCancelledAllUnchanged_thenReturnsNoAction() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -401,7 +401,7 @@ class RelayDiffPlannerTest {
 
     @Test
     void plan_givenUpdateAction_thenCarriesAllDayBusyAndCancelledFromCurrentEvent() {
-        var currentEvents = List.of(new SourceEvent("source-1", START, END, true, false, false, true));
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, true, false, false, true, null));
         var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
 
         var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
@@ -411,5 +411,42 @@ class RelayDiffPlannerTest {
         assertThat(update.allDay()).isTrue();
         assertThat(update.busy()).isFalse();
         assertThat(update.cancelled()).isTrue();
+    }
+
+    // --- sourceTitle: threaded into Create/Update, excluded from change detection ---
+
+    @Test
+    void plan_givenNewSourceEventWithSourceTitle_thenCreateActionCarriesSameSourceTitle() {
+        var currentEvents = List.of(new SourceEvent("source-1", START, END, false, true, false, false, "Zahnarzt"));
+
+        var actions = planner.plan(currentEvents, List.of(), NOW, HORIZON);
+
+        assertThat(actions).hasSize(1);
+        var create = (RelayAction.Create) actions.getFirst();
+        assertThat(create.sourceTitle()).isEqualTo("Zahnarzt");
+    }
+
+    @Test
+    void plan_givenChangedWindowOnSourceEventWithSourceTitle_thenUpdateActionCarriesSameSourceTitle() {
+        var newEnd = END.plusMinutes(30);
+        var currentEvents = List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false, "Zahnarzt"));
+        var priorStates = List.of(new RelayState("source-1", "blocker-1", 2, START, END, true, false, true, false));
+
+        var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
+
+        assertThat(actions).hasSize(1);
+        var update = (RelayAction.Update) actions.getFirst();
+        assertThat(update.sourceTitle()).isEqualTo("Zahnarzt");
+    }
+
+    @Test
+    void plan_givenTitleOnlyChangeOnActiveStateWithWindowAndFlagsUnchanged_thenReturnsNoAction() {
+        var currentEvents =
+                List.of(new SourceEvent("source-1", START, END, false, true, false, false, "Neuer Titel"));
+        var priorStates = List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false));
+
+        var actions = planner.plan(currentEvents, priorStates, NOW, HORIZON);
+
+        assertThat(actions).isEmpty();
     }
 }
