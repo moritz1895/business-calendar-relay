@@ -773,7 +773,8 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                 isDateOnlyValue(dtStart),
                 busy(vevent),
                 false,
-                statusCancelled(vevent));
+                statusCancelled(vevent),
+                sourceTitle(vevent));
     }
 
     private List<SourceEvent> expandRecurringSeries(
@@ -786,6 +787,7 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
         var masterAllDay = masterForm.valueIsDate();
         var masterBusy = busy(master);
         var masterCancelled = statusCancelled(master);
+        var masterTitle = sourceTitle(master);
 
         Recur<ZonedDateTime> recur;
         try {
@@ -826,7 +828,8 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                         isDateOnlyValue(overrideDtStart),
                         busy(override),
                         true,
-                        masterCancelled));
+                        masterCancelled,
+                        sourceTitle(override)));
             } else {
                 result.add(new SourceEvent(
                         sourceUid,
@@ -835,7 +838,8 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                         masterAllDay,
                         masterBusy,
                         true,
-                        masterCancelled));
+                        masterCancelled,
+                        masterTitle));
             }
         }
         return result;
@@ -884,6 +888,21 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
         return vevent.<Status>getProperty(Property.STATUS)
                 .map(status -> Status.VALUE_CANCELLED.equals(status.getValue()))
                 .orElse(false);
+    }
+
+    /**
+     * Reads {@code SUMMARY} for {@link SourceEvent#sourceTitle()}, mapping a missing or
+     * blank value to {@code null} rather than an empty string, so a titleless source
+     * event degrades cleanly to no mail-text hint (see {@code
+     * docs/features/source-title-hint-in-imip-mail-body.md}) instead of ever surfacing a
+     * blank or literal-"null" hint line.
+     */
+    private @Nullable String sourceTitle(VEvent vevent) {
+        return vevent.getProperty(Property.SUMMARY)
+                .map(Property::getValue)
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .orElse(null);
     }
 
     private DtStart<?> requireDtStart(String uid, VEvent vevent) {

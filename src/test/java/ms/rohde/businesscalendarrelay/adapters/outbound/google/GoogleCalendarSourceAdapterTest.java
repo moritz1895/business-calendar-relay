@@ -311,7 +311,8 @@ class GoogleCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false));
+                        false,
+                        null));
     }
 
     @Test
@@ -332,7 +333,8 @@ class GoogleCalendarSourceAdapterTest {
                         true,
                         true,
                         false,
-                        false));
+                        false,
+                        null));
     }
 
     @Test
@@ -348,6 +350,56 @@ class GoogleCalendarSourceAdapterTest {
         var events = adapter(endpoints, neverTouchedReplicaStore(), false).readEvents();
 
         assertThat(events).singleElement().satisfies(event -> assertThat(event.busy()).isFalse());
+    }
+
+    @Test
+    void readEvents_givenEventWithSummary_thenSourceTitleIsSummaryValue() throws IOException {
+        var eventWithSummary =
+                "{\"id\":\"titled1\",\"status\":\"confirmed\",\"summary\":\"Zahnarzt\","
+                        + "\"start\":{\"dateTime\":\"2026-02-01T10:00:00+01:00\",\"timeZone\":\"Europe/Berlin\"},"
+                        + "\"end\":{\"dateTime\":\"2026-02-01T11:00:00+01:00\",\"timeZone\":\"Europe/Berlin\"}}";
+        var endpoints = startServer(
+                fixedTokenResponse(),
+                query -> new StubResponse(200, eventsListBody("sync-1", List.of(eventWithSummary))));
+
+        var events = adapter(endpoints, neverTouchedReplicaStore(), false).readEvents();
+
+        assertThat(events).singleElement().satisfies(event -> assertThat(event.sourceTitle()).isEqualTo("Zahnarzt"));
+    }
+
+    @Test
+    void readEvents_givenEventWithBlankSummary_thenSourceTitleIsNull() throws IOException {
+        var eventWithBlankSummary =
+                "{\"id\":\"blanktitle1\",\"status\":\"confirmed\",\"summary\":\"   \","
+                        + "\"start\":{\"dateTime\":\"2026-02-01T10:00:00+01:00\",\"timeZone\":\"Europe/Berlin\"},"
+                        + "\"end\":{\"dateTime\":\"2026-02-01T11:00:00+01:00\",\"timeZone\":\"Europe/Berlin\"}}";
+        var endpoints = startServer(
+                fixedTokenResponse(),
+                query -> new StubResponse(200, eventsListBody("sync-1", List.of(eventWithBlankSummary))));
+
+        var events = adapter(endpoints, neverTouchedReplicaStore(), false).readEvents();
+
+        assertThat(events).singleElement().satisfies(event -> assertThat(event.sourceTitle()).isNull());
+    }
+
+    @Test
+    void readEvents_givenEventWithoutSummaryField_thenSourceTitleIsNull() throws IOException {
+        var events = adapter(
+                        startServer(
+                                fixedTokenResponse(),
+                                query -> new StubResponse(
+                                        200,
+                                        eventsListBody(
+                                                "sync-1",
+                                                List.of(simpleEventJson(
+                                                        "event1",
+                                                        "2026-02-01T10:00:00+01:00",
+                                                        "2026-02-01T11:00:00+01:00"))))),
+                        neverTouchedReplicaStore(),
+                        false)
+                .readEvents();
+
+        assertThat(events).singleElement().satisfies(event -> assertThat(event.sourceTitle()).isNull());
     }
 
     @Test

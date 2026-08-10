@@ -3,6 +3,7 @@ package ms.rohde.businesscalendarrelay.core.domain;
 import java.time.ZonedDateTime;
 import java.util.Objects;
 import ms.rohde.hexagonalarch.annotations.DomainValueObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One create/update/cancel decision produced by {@link RelayDiffPlanner} for a single
@@ -34,6 +35,13 @@ public sealed interface RelayAction {
      * {@link SourceEvent} so the application layer can populate the {@code lastKnown*}
      * fields of the {@link RelayState} it saves after a successful send, without having
      * to re-read the source event.
+     *
+     * <p>Also carries {@code sourceTitle} from the triggering {@link SourceEvent}, for
+     * the same reason: so the application layer can thread it through to the
+     * {@code BlockerMail} it sends without re-reading the source event. Like
+     * {@code allDay}/{@code busy}/{@code cancelled}, it is transport only — see
+     * {@link SourceEvent}'s Javadoc for why this does not make the rendered blocker
+     * itself titled.
      */
     @DomainValueObject
     record Create(
@@ -44,7 +52,8 @@ public sealed interface RelayAction {
             ZonedDateTime end,
             boolean allDay,
             boolean busy,
-            boolean cancelled)
+            boolean cancelled,
+            @Nullable String sourceTitle)
             implements RelayAction {
 
         public Create {
@@ -58,8 +67,8 @@ public sealed interface RelayAction {
      * is resurrecting from a previously cancelled state. Reuses the prior
      * {@code blockerUid} at {@code prior.sequence() + 1}.
      *
-     * <p>Carries {@code allDay}, {@code busy}, and {@code cancelled} from the triggering
-     * {@link SourceEvent} for the same reason as {@link Create}.
+     * <p>Carries {@code allDay}, {@code busy}, {@code cancelled}, and {@code sourceTitle}
+     * from the triggering {@link SourceEvent} for the same reason as {@link Create}.
      */
     @DomainValueObject
     record Update(
@@ -70,7 +79,8 @@ public sealed interface RelayAction {
             ZonedDateTime end,
             boolean allDay,
             boolean busy,
-            boolean cancelled)
+            boolean cancelled,
+            @Nullable String sourceTitle)
             implements RelayAction {
 
         public Update {
@@ -82,6 +92,12 @@ public sealed interface RelayAction {
      * A previously active source event absent from the current poll: its blocker must
      * be cancelled, reusing the prior {@code blockerUid} at {@code prior.sequence() + 1}
      * and the last-known time window (there is no current window to use).
+     *
+     * <p>Deliberately does not carry {@code sourceTitle}, unlike {@link Create} and
+     * {@link Update}: at cancel time there is no current {@link SourceEvent} to source a
+     * title from (the source event has disappeared from the poll), and {@link RelayState}
+     * deliberately does not persist a {@code lastKnownSourceTitle} to fall back to — the
+     * title-hint feature does not extend to cancel mails.
      */
     @DomainValueObject
     record Cancel(String sourceUid, String blockerUid, long sequence, ZonedDateTime start, ZonedDateTime end)

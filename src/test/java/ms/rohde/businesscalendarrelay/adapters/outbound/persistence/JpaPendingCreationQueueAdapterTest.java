@@ -65,7 +65,13 @@ class JpaPendingCreationQueueAdapterTest {
     }
 
     private static RelayAction.Create createAction(String sourceUid, ZonedDateTime start, ZonedDateTime end) {
-        return new RelayAction.Create(sourceUid, "blocker-" + sourceUid, 0, start, end, false, true, false);
+        return new RelayAction.Create(sourceUid, "blocker-" + sourceUid, 0, start, end, false, true, false, null);
+    }
+
+    private static RelayAction.Create createActionWithTitle(
+            String sourceUid, ZonedDateTime start, ZonedDateTime end, String sourceTitle) {
+        return new RelayAction.Create(
+                sourceUid, "blocker-" + sourceUid, 0, start, end, false, true, false, sourceTitle);
     }
 
     @Test
@@ -115,6 +121,21 @@ class JpaPendingCreationQueueAdapterTest {
             assertThat(action.busy()).isTrue();
             assertThat(action.cancelled()).isFalse();
         });
+    }
+
+    /**
+     * {@link PendingCreationEntity} has no column for {@code sourceTitle} -- see {@link
+     * JpaPendingCreationQueueAdapter#toDomain}'s Javadoc for why this is an accepted
+     * degradation, not a bug: a create queued through the burst-filter initialization
+     * backlog loses its mail-text title hint by the time it is drained.
+     */
+    @Test
+    void loadAllOrderedByStart_givenSavedEntryWithSourceTitle_thenRoundTripDropsSourceTitle() {
+        adapter.saveAll(List.of(createActionWithTitle("source-1", start(), end(), "Zahnarzt")));
+
+        var result = adapter.loadAllOrderedByStart();
+
+        assertThat(result).singleElement().satisfies(action -> assertThat(action.sourceTitle()).isNull());
     }
 
     @Test

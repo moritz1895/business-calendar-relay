@@ -84,7 +84,8 @@ public final class RelayDiffPlanner {
                             event.end(),
                             event.allDay(),
                             event.busy(),
-                            event.cancelled()));
+                            event.cancelled(),
+                            event.sourceTitle()));
                 }
             } else if (!prior.active() || relayStateChanged(event, prior)) {
                 actions.add(new RelayAction.Update(
@@ -95,7 +96,8 @@ public final class RelayDiffPlanner {
                         event.end(),
                         event.allDay(),
                         event.busy(),
-                        event.cancelled()));
+                        event.cancelled(),
+                        event.sourceTitle()));
             }
         }
 
@@ -174,6 +176,16 @@ public final class RelayDiffPlanner {
         return UUID.nameUUIDFromBytes(sourceUid.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
+    /**
+     * Compares {@code event} against {@code prior}'s {@code lastKnown*} fields on
+     * exactly {@code start}, {@code end}, {@code allDay}, {@code busy}, and
+     * {@code cancelled}. {@code recurring} and {@code sourceTitle} are deliberately
+     * excluded from this comparison: {@code recurring} is informational only (see the
+     * class Javadoc), and {@code sourceTitle} is mail-text payload with no persisted
+     * {@code lastKnown*} counterpart on {@link RelayState} — a title-only change on the
+     * source event (time window and flags unchanged) is therefore treated as a no-op and
+     * does not trigger a resend.
+     */
     private boolean relayStateChanged(SourceEvent event, RelayState prior) {
         return !event.start().equals(prior.lastKnownStart())
                 || !event.end().equals(prior.lastKnownEnd())

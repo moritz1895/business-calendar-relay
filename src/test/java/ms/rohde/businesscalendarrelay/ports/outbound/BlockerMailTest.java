@@ -12,7 +12,12 @@ class BlockerMailTest {
     @Test
     void create_givenValidData_thenBlockerMailIsCreated() {
         var mail = new BlockerMail(
-                ICS_TEXT, BlockerMailMethod.REQUEST, "relay@example.com", "organizer@example.com", "business@example.com");
+                ICS_TEXT,
+                BlockerMailMethod.REQUEST,
+                "relay@example.com",
+                "organizer@example.com",
+                "business@example.com",
+                null);
 
         assertThat(mail.icsText()).isEqualTo(ICS_TEXT);
         assertThat(mail.method()).isEqualTo(BlockerMailMethod.REQUEST);
@@ -24,28 +29,64 @@ class BlockerMailTest {
     @Test
     void create_givenBlankIcsText_thenThrowsIllegalArgumentException() {
         assertThatThrownBy(() -> new BlockerMail(
-                        "  ", BlockerMailMethod.REQUEST, "relay@example.com", "organizer@example.com", "business@example.com"))
+                        "  ",
+                        BlockerMailMethod.REQUEST,
+                        "relay@example.com",
+                        "organizer@example.com",
+                        "business@example.com",
+                        null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenFromAddressWithoutAtSign_thenThrowsIllegalArgumentException() {
         assertThatThrownBy(() -> new BlockerMail(
-                        ICS_TEXT, BlockerMailMethod.REQUEST, "not-an-email", "organizer@example.com", "business@example.com"))
+                        ICS_TEXT,
+                        BlockerMailMethod.REQUEST,
+                        "not-an-email",
+                        "organizer@example.com",
+                        "business@example.com",
+                        null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenReplyToAddressWithoutAtSign_thenThrowsIllegalArgumentException() {
         assertThatThrownBy(() -> new BlockerMail(
-                        ICS_TEXT, BlockerMailMethod.REQUEST, "relay@example.com", "not-an-email", "business@example.com"))
+                        ICS_TEXT, BlockerMailMethod.REQUEST, "relay@example.com", "not-an-email", "business@example.com", null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenToAddressWithoutAtSign_thenThrowsIllegalArgumentException() {
         assertThatThrownBy(() -> new BlockerMail(
-                        ICS_TEXT, BlockerMailMethod.REQUEST, "relay@example.com", "organizer@example.com", "not-an-email"))
+                        ICS_TEXT, BlockerMailMethod.REQUEST, "relay@example.com", "organizer@example.com", "not-an-email", null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void create_givenNonNullSourceTitle_thenBlockerMailCarriesIt() {
+        var mail = new BlockerMail(
+                ICS_TEXT,
+                BlockerMailMethod.REQUEST,
+                "relay@example.com",
+                "organizer@example.com",
+                "business@example.com",
+                "Zahnarzt");
+
+        assertThat(mail.sourceTitle()).isEqualTo("Zahnarzt");
+    }
+
+    @Test
+    void create_givenNullSourceTitle_thenBlockerMailIsCreatedWithNullSourceTitle() {
+        var mail = new BlockerMail(
+                ICS_TEXT,
+                BlockerMailMethod.REQUEST,
+                "relay@example.com",
+                "organizer@example.com",
+                "business@example.com",
+                null);
+
+        assertThat(mail.sourceTitle()).isNull();
     }
 }

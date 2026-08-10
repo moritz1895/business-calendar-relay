@@ -96,13 +96,13 @@ class PollAndRelaySourceCalendarServiceTest {
 
     private static RelayAction.Create createAction(String sourceUid, ZonedDateTime start) {
         return new RelayAction.Create(
-                sourceUid, "blocker-" + sourceUid, 0, start, start.plusHours(1), false, true, false);
+                sourceUid, "blocker-" + sourceUid, 0, start, start.plusHours(1), false, true, false, null);
     }
 
     @Test
     void pollAndRelay_givenNewSourceEvent_thenCreatesBlockerAndSavesState() {
         given(calendarSource.readEvents())
-                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false)));
+                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false, null)));
         given(stateStore.loadAll()).willReturn(List.of());
         given(burstBudget.tryAcquireSendSlot()).willReturn(true);
 
@@ -137,11 +137,25 @@ class PollAndRelaySourceCalendarServiceTest {
     }
 
     @Test
+    void pollAndRelay_givenNewSourceEventWithSourceTitle_thenCreatedBlockerMailCarriesSourceTitle() {
+        given(calendarSource.readEvents())
+                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false, "Zahnarzt")));
+        given(stateStore.loadAll()).willReturn(List.of());
+        given(burstBudget.tryAcquireSendSlot()).willReturn(true);
+
+        service.pollAndRelay();
+
+        var mailCaptor = ArgumentCaptor.forClass(BlockerMail.class);
+        then(blockerSink).should().send(mailCaptor.capture());
+        assertThat(mailCaptor.getValue().sourceTitle()).isEqualTo("Zahnarzt");
+    }
+
+    @Test
     void pollAndRelay_givenNewEventWithStartBeforeClockNow_thenNoActionIsTakenAndNothingIsSaved() {
         var pastStart = ZonedDateTime.of(2026, 7, 15, 10, 0, 0, 0, BERLIN);
         given(calendarSource.readEvents())
                 .willReturn(List.of(new SourceEvent(
-                        "source-1", pastStart, pastStart.plusHours(1), false, true, false, false)));
+                        "source-1", pastStart, pastStart.plusHours(1), false, true, false, false, null)));
         given(stateStore.loadAll()).willReturn(List.of());
 
         var result = service.pollAndRelay();
@@ -158,7 +172,7 @@ class PollAndRelaySourceCalendarServiceTest {
     void pollAndRelay_givenNewRecurringEventBeyondConfiguredHorizon_thenNoActionIsTakenAndNothingIsSaved() {
         var beyondHorizonStart = ZonedDateTime.of(2027, 6, 1, 10, 0, 0, 0, BERLIN);
         var recurringEvent =
-                new SourceEvent("source-1", beyondHorizonStart, beyondHorizonStart.plusHours(1), false, true, true, false);
+                new SourceEvent("source-1", beyondHorizonStart, beyondHorizonStart.plusHours(1), false, true, true, false, null);
         given(calendarSource.readEvents()).willReturn(List.of(recurringEvent));
         given(stateStore.loadAll()).willReturn(List.of());
 
@@ -173,7 +187,7 @@ class PollAndRelaySourceCalendarServiceTest {
     void pollAndRelay_givenChangedWindow_thenUpdatesBlockerAndIncrementsSequence() {
         var newEnd = END.plusMinutes(30);
         given(calendarSource.readEvents())
-                .willReturn(List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false)));
+                .willReturn(List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false, null)));
         given(stateStore.loadAll())
                 .willReturn(List.of(new RelayState("source-1", "blocker-1", 2, START, END, true, false, true, false)));
 
@@ -199,8 +213,24 @@ class PollAndRelaySourceCalendarServiceTest {
     }
 
     @Test
+    void pollAndRelay_givenChangedWindowOnSourceEventWithSourceTitle_thenUpdatedBlockerMailCarriesSourceTitle() {
+        var newEnd = END.plusMinutes(30);
+        given(calendarSource.readEvents())
+                .willReturn(
+                        List.of(new SourceEvent("source-1", START, newEnd, false, true, false, false, "Zahnarzt")));
+        given(stateStore.loadAll())
+                .willReturn(List.of(new RelayState("source-1", "blocker-1", 2, START, END, true, false, true, false)));
+
+        service.pollAndRelay();
+
+        var mailCaptor = ArgumentCaptor.forClass(BlockerMail.class);
+        then(blockerSink).should().send(mailCaptor.capture());
+        assertThat(mailCaptor.getValue().sourceTitle()).isEqualTo("Zahnarzt");
+    }
+
+    @Test
     void pollAndRelay_givenFlagOnlyChangeOnActiveState_thenSavesRelayStateWithCurrentAllDayBusyCancelledFlags() {
-        var flaggedEvent = new SourceEvent("source-1", START, END, true, false, false, true);
+        var flaggedEvent = new SourceEvent("source-1", START, END, true, false, false, true, null);
         given(calendarSource.readEvents()).willReturn(List.of(flaggedEvent));
         given(stateStore.loadAll())
                 .willReturn(
@@ -221,7 +251,7 @@ class PollAndRelaySourceCalendarServiceTest {
     @Test
     void pollAndRelay_givenUnchangedWindow_thenNoOp() {
         given(calendarSource.readEvents())
-                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false)));
+                .willReturn(List.of(new SourceEvent("source-1", START, END, false, true, false, false, null)));
         given(stateStore.loadAll())
                 .willReturn(List.of(new RelayState("source-1", "blocker-1", 1, START, END, true, false, true, false)));
 
@@ -257,6 +287,7 @@ class PollAndRelaySourceCalendarServiceTest {
                 .contains("UID:blocker-1")
                 .contains("SEQUENCE:2")
                 .contains("METHOD:CANCEL");
+        assertThat(mailCaptor.getValue().sourceTitle()).isNull();
 
         then(stateStore).should().markCancelled("source-1", 2);
         then(stateStore).should(never()).save(any());
@@ -266,8 +297,8 @@ class PollAndRelaySourceCalendarServiceTest {
     void pollAndRelay_givenOneSendFailureAmongSeveral_thenContinuesCycleAndReportsFailureWithoutUpdatingState() {
         given(calendarSource.readEvents())
                 .willReturn(List.of(
-                        new SourceEvent("source-fail", START, END, false, true, false, false),
-                        new SourceEvent("source-ok", START, END, false, true, false, false)));
+                        new SourceEvent("source-fail", START, END, false, true, false, false, null),
+                        new SourceEvent("source-ok", START, END, false, true, false, false, null)));
         given(stateStore.loadAll()).willReturn(List.of());
         given(burstBudget.tryAcquireSendSlot()).willReturn(true);
 
@@ -297,8 +328,8 @@ class PollAndRelaySourceCalendarServiceTest {
     void pollAndRelay_givenOneStateSaveFailureAmongSeveral_thenContinuesCycleAndReportsFailureWithoutThrowing() {
         given(calendarSource.readEvents())
                 .willReturn(List.of(
-                        new SourceEvent("source-fail", START, END, false, true, false, false),
-                        new SourceEvent("source-ok", START, END, false, true, false, false)));
+                        new SourceEvent("source-fail", START, END, false, true, false, false, null),
+                        new SourceEvent("source-ok", START, END, false, true, false, false, null)));
         given(stateStore.loadAll()).willReturn(List.of());
         given(burstBudget.tryAcquireSendSlot()).willReturn(true);
 
@@ -331,8 +362,8 @@ class PollAndRelaySourceCalendarServiceTest {
         var laterStart = START.plusDays(1);
         given(calendarSource.readEvents())
                 .willReturn(List.of(
-                        new SourceEvent("source-later", laterStart, laterStart.plusHours(1), false, true, false, false),
-                        new SourceEvent("source-earlier", START, END, false, true, false, false)));
+                        new SourceEvent("source-later", laterStart, laterStart.plusHours(1), false, true, false, false, null),
+                        new SourceEvent("source-earlier", START, END, false, true, false, false, null)));
         given(stateStore.loadAll()).willReturn(List.of());
         given(pendingCreationQueue.loadAllOrderedByStart()).willReturn(List.of());
         given(burstBudget.tryAcquireSendSlot()).willReturn(true, false);

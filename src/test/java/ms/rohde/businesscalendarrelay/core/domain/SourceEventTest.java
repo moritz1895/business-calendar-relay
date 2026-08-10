@@ -15,7 +15,7 @@ class SourceEventTest {
 
     @Test
     void create_givenValidData_thenSourceEventIsCreated() {
-        var event = new SourceEvent("source-uid-1", START, END, false, true, false, false);
+        var event = new SourceEvent("source-uid-1", START, END, false, true, false, false, null);
 
         assertThat(event.sourceUid()).isEqualTo("source-uid-1");
         assertThat(event.start()).isEqualTo(START);
@@ -24,13 +24,13 @@ class SourceEventTest {
 
     @Test
     void create_givenBlankSourceUid_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new SourceEvent("  ", START, END, false, true, false, false))
+        assertThatThrownBy(() -> new SourceEvent("  ", START, END, false, true, false, false, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenEndNotAfterStart_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new SourceEvent("source-uid-1", START, START, false, true, false, false))
+        assertThatThrownBy(() -> new SourceEvent("source-uid-1", START, START, false, true, false, false, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -38,25 +38,40 @@ class SourceEventTest {
     void create_givenMismatchedZones_thenThrowsIllegalArgumentException() {
         var endInDifferentZone = END.withZoneSameInstant(ZoneId.of("UTC"));
 
-        assertThatThrownBy(() -> new SourceEvent("source-uid-1", START, endInDifferentZone, false, true, false, false))
+        assertThatThrownBy(
+                        () -> new SourceEvent("source-uid-1", START, endInDifferentZone, false, true, false, false, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void equals_givenSameComponents_thenSourceEventsAreEqual() {
-        var first = new SourceEvent("source-uid-1", START, END, false, true, false, false);
-        var second = new SourceEvent("source-uid-1", START, END, false, true, false, false);
+        var first = new SourceEvent("source-uid-1", START, END, false, true, false, false, null);
+        var second = new SourceEvent("source-uid-1", START, END, false, true, false, false, null);
 
         assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
     }
 
     @Test
     void create_givenAllFlagsExplicitly_thenSourceEventCarriesThem() {
-        var event = new SourceEvent("source-uid-1", START, END, true, false, true, true);
+        var event = new SourceEvent("source-uid-1", START, END, true, false, true, true, null);
 
         assertThat(event.allDay()).isTrue();
         assertThat(event.busy()).isFalse();
         assertThat(event.recurring()).isTrue();
         assertThat(event.cancelled()).isTrue();
+    }
+
+    @Test
+    void create_givenNonNullSourceTitle_thenSourceEventCarriesIt() {
+        var event = new SourceEvent("source-uid-1", START, END, false, true, false, false, "Zahnarzt");
+
+        assertThat(event.sourceTitle()).isEqualTo("Zahnarzt");
+    }
+
+    @Test
+    void create_givenNullSourceTitle_thenSourceEventIsCreatedWithNullSourceTitle() {
+        var event = new SourceEvent("source-uid-1", START, END, false, true, false, false, null);
+
+        assertThat(event.sourceTitle()).isNull();
     }
 }
