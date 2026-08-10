@@ -4,7 +4,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Objects;
 import ms.rohde.hexagonalarch.annotations.DomainValueObject;
-import org.jspecify.annotations.Nullable;
 
 /**
  * A single blocker occurrence to be rendered into iMIP/ICS text.
@@ -13,14 +12,6 @@ import org.jspecify.annotations.Nullable;
  * source event so Outlook treats them as the same appointment. {@code sequence} is
  * owned and incremented by the caller (e.g. the application layer / state store) and
  * must strictly increase on every re-render of the same logical revision.
- *
- * <p>{@code sourceTitle} is a pure transport container carried through from
- * {@link RelayAction.Create}/{@link RelayAction.Update} to the application layer's mail
- * construction step — it exists so a downstream mail-adapter step can surface it as a
- * human-readable hint in the iMIP mail body. It is deliberately <b>never</b> read by
- * {@link ImipCalendarRenderer}: the rendered ICS text always emits the fixed
- * {@code SUMMARY:Privater Blocker} literal regardless of this field's value, keeping the
- * business calendar's blocker titleless exactly as before.
  */
 @DomainValueObject
 public record BlockerEvent(
@@ -29,8 +20,7 @@ public record BlockerEvent(
         ZonedDateTime start,
         ZonedDateTime end,
         String organizerEmail,
-        String attendeeEmail,
-        @Nullable String sourceTitle) {
+        String attendeeEmail) {
 
     public BlockerEvent {
         Objects.requireNonNull(uid, "uid must not be null");

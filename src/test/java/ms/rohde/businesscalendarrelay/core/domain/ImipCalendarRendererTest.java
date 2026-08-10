@@ -52,15 +52,11 @@ class ImipCalendarRendererTest {
 
     private static BlockerEvent blockerEvent(String uid, long sequence, ZonedDateTime start, ZonedDateTime end,
             String attendeeEmail) {
-        return new BlockerEvent(uid, sequence, start, end, ORGANIZER_EMAIL, attendeeEmail, null);
+        return new BlockerEvent(uid, sequence, start, end, ORGANIZER_EMAIL, attendeeEmail);
     }
 
     private static BlockerEvent blockerEvent(String uid, long sequence) {
         return blockerEvent(uid, sequence, START, END, ATTENDEE_EMAIL);
-    }
-
-    private static BlockerEvent blockerEventWithSourceTitle(String uid, long sequence, String sourceTitle) {
-        return new BlockerEvent(uid, sequence, START, END, ORGANIZER_EMAIL, ATTENDEE_EMAIL, sourceTitle);
     }
 
     /**
@@ -287,30 +283,5 @@ class ImipCalendarRendererTest {
         assertThat(beginVEventIndex).isGreaterThan(beginVTimezoneIndex);
         assertThat(endVEventIndex).isGreaterThan(beginVEventIndex);
         assertThat(endVCalendarIndex).isGreaterThan(endVEventIndex);
-    }
-
-    // --- sourceTitle: the single most important invariant of the title-hint feature ---
-    // ImipCalendarRenderer must never read BlockerEvent.sourceTitle() into rendered ICS text.
-
-    @Test
-    void renderRequest_givenBlockerEventWithDistinctiveSourceTitle_thenIcsNeverContainsItAndSummaryStaysFixedLiteral() {
-        var event = blockerEventWithSourceTitle("relay-uid-16", 0, "Streng geheimer Titel");
-
-        var ics = renderer.renderRequest(event, GENERATED_AT);
-        var lines = logicalLines(ics);
-
-        assertThat(ics).doesNotContain("Streng geheimer Titel");
-        assertThat(requireLine(lines, "SUMMARY:")).isEqualTo("SUMMARY:Privater Blocker");
-    }
-
-    @Test
-    void renderCancel_givenBlockerEventWithDistinctiveSourceTitle_thenIcsNeverContainsItAndSummaryStaysFixedLiteral() {
-        var event = blockerEventWithSourceTitle("relay-uid-17", 1, "Streng geheimer Titel");
-
-        var ics = renderer.renderCancel(event, GENERATED_AT);
-        var lines = logicalLines(ics);
-
-        assertThat(ics).doesNotContain("Streng geheimer Titel");
-        assertThat(requireLine(lines, "SUMMARY:")).isEqualTo("SUMMARY:Privater Blocker");
     }
 }

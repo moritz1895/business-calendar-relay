@@ -542,23 +542,7 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
         var busy = transparencyNode == null || !"transparent".equals(transparencyNode.asText());
         var cancelled = isCancelledStatus(item);
 
-        return new SourceEvent(sourceUid, start, end, allDay, busy, recurring, cancelled, sourceTitle(item));
-    }
-
-    /**
-     * Reads the Event resource's {@code summary} field for {@link SourceEvent#sourceTitle()},
-     * mapping a missing or blank value to {@code null} rather than an empty string, so a
-     * titleless source event degrades cleanly to no mail-text hint (see {@code
-     * docs/features/source-title-hint-in-imip-mail-body.md}) instead of ever surfacing a
-     * blank or literal-"null" hint line.
-     */
-    private @Nullable String sourceTitle(JsonNode item) {
-        var summaryNode = item.get("summary");
-        if (summaryNode == null || summaryNode.isNull()) {
-            return null;
-        }
-        var summary = summaryNode.asText().trim();
-        return summary.isEmpty() ? null : summary;
+        return new SourceEvent(sourceUid, start, end, allDay, busy, recurring, cancelled);
     }
 
     /**

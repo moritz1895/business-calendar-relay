@@ -55,11 +55,7 @@ class SmtpBlockerSinkAdapterTest {
     }
 
     private static BlockerMail blockerMail(BlockerMailMethod method) {
-        return blockerMail(method, null);
-    }
-
-    private static BlockerMail blockerMail(BlockerMailMethod method, String sourceTitle) {
-        return new BlockerMail(ICS_TEXT, method, FROM_ADDRESS, REPLY_TO_ADDRESS, TO_ADDRESS, sourceTitle);
+        return new BlockerMail(ICS_TEXT, method, FROM_ADDRESS, REPLY_TO_ADDRESS, TO_ADDRESS);
     }
 
     private static MimeMessage newMimeMessage() {
@@ -103,86 +99,6 @@ class SmtpBlockerSinkAdapterTest {
         assertThat(alternative.getBodyPart(1).getContentType()).startsWith("text/html");
         assertThat((String) alternative.getBodyPart(0).getContent()).isNotBlank();
         assertThat((String) alternative.getBodyPart(1).getContent()).isNotBlank();
-    }
-
-    @Test
-    void send_givenRequestMailWithSourceTitle_thenPlainTextAndHtmlBodiesContainTitleHintLine()
-            throws MessagingException, IOException {
-        var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST, "Zahnarzt"));
-
-        var mixed = (MimeMultipart) sent.getContent();
-        var alternative = (MimeMultipart) mixed.getBodyPart(0).getContent();
-
-        var plainText = (String) alternative.getBodyPart(0).getContent();
-        var html = (String) alternative.getBodyPart(1).getContent();
-        assertThat(plainText).contains("Urspruenglicher Titel im privaten Kalender: Zahnarzt");
-        assertThat(html).contains("Urspruenglicher Titel im privaten Kalender:").contains("Zahnarzt");
-    }
-
-    @Test
-    void send_givenRequestMailWithoutSourceTitle_thenBodiesContainNoTitleHintLine()
-            throws MessagingException, IOException {
-        var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST));
-
-        var mixed = (MimeMultipart) sent.getContent();
-        var alternative = (MimeMultipart) mixed.getBodyPart(0).getContent();
-
-        var plainText = (String) alternative.getBodyPart(0).getContent();
-        var html = (String) alternative.getBodyPart(1).getContent();
-        assertThat(plainText).doesNotContain("Urspruenglicher Titel");
-        assertThat(html).doesNotContain("Urspruenglicher Titel");
-    }
-
-    @Test
-    void send_givenRequestMailWithHtmlSensitiveSourceTitle_thenHtmlBodyEscapesItButPlainTextDoesNot()
-            throws MessagingException, IOException {
-        var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST, "<b>Danger</b> & \"quotes\" 'apostrophe'"));
-
-        var mixed = (MimeMultipart) sent.getContent();
-        var alternative = (MimeMultipart) mixed.getBodyPart(0).getContent();
-
-        var plainText = (String) alternative.getBodyPart(0).getContent();
-        var html = (String) alternative.getBodyPart(1).getContent();
-        assertThat(plainText).contains("<b>Danger</b> & \"quotes\" 'apostrophe'");
-        assertThat(html)
-                .contains("&lt;b&gt;Danger&lt;/b&gt; &amp; &quot;quotes&quot; &#39;apostrophe&#39;")
-                .doesNotContain("<b>Danger</b>");
-    }
-
-    @Test
-    void send_givenRequestMailWithSourceTitle_thenSubjectAndIcsTextStayTitlelessRegardlessOfSourceTitle()
-            throws MessagingException, IOException {
-        var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST, "Streng geheimer Titel"));
-
-        assertThat(sent.getSubject()).isEqualTo("Privater Blocker");
-        var mixed = (MimeMultipart) sent.getContent();
-        var calendarPart = mixed.getBodyPart(1);
-        var decoded = new String(calendarPart.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertThat(decoded).isEqualTo(ICS_TEXT).doesNotContain("Streng geheimer Titel");
-    }
-
-    @Test
-    void send_givenRequestMailHtmlPartWithSourceTitle_thenBothBodyPartsStayNonBlank()
-            throws MessagingException, IOException {
-        var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST, "Zahnarzt"));
-
-        var mixed = (MimeMultipart) sent.getContent();
-        var alternative = (MimeMultipart) mixed.getBodyPart(0).getContent();
-
-        assertThat((String) alternative.getBodyPart(0).getContent()).isNotBlank();
-        assertThat((String) alternative.getBodyPart(1).getContent()).isNotBlank();
-    }
-
-    @Test
-    void send_givenRequestMailHtmlPartWithSourceTitle_thenHtmlBodyStillContainsBoilerplateSentence()
-            throws MessagingException, IOException {
-        var sent = sendAndCapture(blockerMail(BlockerMailMethod.REQUEST, "Zahnarzt"));
-
-        var mixed = (MimeMultipart) sent.getContent();
-        var alternative = (MimeMultipart) mixed.getBodyPart(0).getContent();
-        var html = (String) alternative.getBodyPart(1).getContent();
-
-        assertThat(html).contains("Diese Nachricht enthaelt eine Kalender-Einladung.");
     }
 
     @Test
@@ -282,7 +198,7 @@ class SmtpBlockerSinkAdapterTest {
         var mimeMessage = newMimeMessage();
         given(mailSender.createMimeMessage()).willReturn(mimeMessage);
         var invalidFromAddress = new BlockerMail(
-                ICS_TEXT, BlockerMailMethod.REQUEST, "john doe@example.com", REPLY_TO_ADDRESS, TO_ADDRESS, null);
+                ICS_TEXT, BlockerMailMethod.REQUEST, "john doe@example.com", REPLY_TO_ADDRESS, TO_ADDRESS);
 
         assertThatThrownBy(() -> adapter.send(invalidFromAddress))
                 .isInstanceOf(BlockerSinkException.class)

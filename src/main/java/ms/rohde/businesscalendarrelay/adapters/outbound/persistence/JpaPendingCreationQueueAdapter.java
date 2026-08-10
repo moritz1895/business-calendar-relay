@@ -69,18 +69,6 @@ public final class JpaPendingCreationQueueAdapter implements PendingCreationQueu
         }
     }
 
-    /**
-     * {@code sourceTitle} is deliberately dropped on this round-trip: {@link
-     * PendingCreationEntity} carries no column for it, matching {@code
-     * docs/features/source-title-hint-in-imip-mail-body.md}'s decision to add no new
-     * persistence for the title anywhere in this feature. Practical consequence: a
-     * {@link RelayAction.Create} that spent time queued here (the burst-filter
-     * initialization backlog for a brand-new calendar, see {@code
-     * docs/features/burst-filter-initialization.md}) sends its eventual create mail
-     * without the mail-text title hint, even if the originating source event had one --
-     * an accepted degradation, not a bug, since the hint is a convenience, not a data
-     * contract.
-     */
     private RelayAction.Create toDomain(PendingCreationEntity entity) {
         return new RelayAction.Create(
                 entity.getSourceUid(),
@@ -90,8 +78,7 @@ public final class JpaPendingCreationQueueAdapter implements PendingCreationQueu
                 entity.getEnd(),
                 entity.isAllDay(),
                 entity.isBusy(),
-                entity.isCancelled(),
-                null);
+                entity.isCancelled());
     }
 
     private PendingCreationEntity toEntity(RelayAction.Create action) {
