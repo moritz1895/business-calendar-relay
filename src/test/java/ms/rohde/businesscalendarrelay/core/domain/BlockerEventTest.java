@@ -15,7 +15,7 @@ class BlockerEventTest {
 
     @Test
     void create_givenValidData_thenBlockerEventIsCreated() {
-        var event = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com", null);
+        var event = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com");
 
         assertThat(event.uid()).isEqualTo("uid-1");
         assertThat(event.sequence()).isZero();
@@ -24,22 +24,19 @@ class BlockerEventTest {
 
     @Test
     void create_givenBlankUid_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(
-                        () -> new BlockerEvent("  ", 0, START, END, "relay@example.com", "business@example.com", null))
+        assertThatThrownBy(() -> new BlockerEvent("  ", 0, START, END, "relay@example.com", "business@example.com"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenNegativeSequence_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(
-                        () -> new BlockerEvent("uid-1", -1, START, END, "relay@example.com", "business@example.com", null))
+        assertThatThrownBy(() -> new BlockerEvent("uid-1", -1, START, END, "relay@example.com", "business@example.com"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenEndNotAfterStart_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(
-                        () -> new BlockerEvent("uid-1", 0, START, START, "relay@example.com", "business@example.com", null))
+        assertThatThrownBy(() -> new BlockerEvent("uid-1", 0, START, START, "relay@example.com", "business@example.com"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -47,44 +44,27 @@ class BlockerEventTest {
     void create_givenMismatchedZones_thenThrowsIllegalArgumentException() {
         var endInDifferentZone = END.withZoneSameInstant(ZoneId.of("UTC"));
 
-        assertThatThrownBy(() -> new BlockerEvent(
-                        "uid-1", 0, START, endInDifferentZone, "relay@example.com", "business@example.com", null))
+        assertThatThrownBy(() -> new BlockerEvent("uid-1", 0, START, endInDifferentZone, "relay@example.com", "business@example.com"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenOrganizerEmailWithoutAtSign_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(
-                        () -> new BlockerEvent("uid-1", 0, START, END, "not-an-email", "business@example.com", null))
+        assertThatThrownBy(() -> new BlockerEvent("uid-1", 0, START, END, "not-an-email", "business@example.com"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void create_givenAttendeeEmailWithoutAtSign_thenThrowsIllegalArgumentException() {
-        assertThatThrownBy(() -> new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "not-an-email", null))
+        assertThatThrownBy(() -> new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "not-an-email"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void equals_givenSameComponents_thenBlockerEventsAreEqual() {
-        var first = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com", null);
-        var second = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com", null);
+        var first = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com");
+        var second = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com");
 
         assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
-    }
-
-    @Test
-    void create_givenNonNullSourceTitle_thenBlockerEventCarriesIt() {
-        var event = new BlockerEvent(
-                "uid-1", 0, START, END, "relay@example.com", "business@example.com", "Streng geheimer Titel");
-
-        assertThat(event.sourceTitle()).isEqualTo("Streng geheimer Titel");
-    }
-
-    @Test
-    void create_givenNullSourceTitle_thenBlockerEventIsCreatedWithNullSourceTitle() {
-        var event = new BlockerEvent("uid-1", 0, START, END, "relay@example.com", "business@example.com", null);
-
-        assertThat(event.sourceTitle()).isNull();
     }
 }

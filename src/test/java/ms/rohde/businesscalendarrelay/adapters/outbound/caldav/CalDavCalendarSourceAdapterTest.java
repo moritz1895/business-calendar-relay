@@ -352,8 +352,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Some private thing"));
+                        false));
     }
 
     @Test
@@ -371,8 +370,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Some private thing"));
+                        false));
     }
 
     @Test
@@ -408,8 +406,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Some private thing"));
+                        false));
     }
 
     @Test
@@ -444,8 +441,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Some private thing"));
+                        false));
     }
 
     @Test
@@ -491,8 +487,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "MERKUR SPIEL-ARENA, Arena-Strasse 1, 40474 Duesseldorf, Deutschland"));
+                        false));
     }
 
     @Test
@@ -516,8 +511,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Legacy client birthday reminder"));
+                        false));
     }
 
     @Test
@@ -548,8 +542,7 @@ class CalDavCalendarSourceAdapterTest {
                         true,
                         true,
                         false,
-                        false,
-                        "All day thing"));
+                        false));
     }
 
     @Test
@@ -567,37 +560,6 @@ class CalDavCalendarSourceAdapterTest {
         var events = adapter(uri).readEvents();
 
         assertThat(events).singleElement().satisfies(event -> assertThat(event.busy()).isFalse());
-    }
-
-    @Test
-    void readEvents_givenVEventWithoutSummary_thenSourceTitleIsNull() throws IOException {
-        var noSummaryVEvent = "BEGIN:VEVENT\n"
-                + "UID:no-summary-uid\n"
-                + "DTSTAMP:20260101T000000Z\n"
-                + "DTSTART;TZID=Europe/Berlin:20260201T100000\n"
-                + "DTEND;TZID=Europe/Berlin:20260201T110000\n"
-                + "END:VEVENT\n";
-        var uri = startServer(207, multiStatusWithCalendarData(icsCalendar(noSummaryVEvent)), null);
-
-        var events = adapter(uri).readEvents();
-
-        assertThat(events).singleElement().satisfies(event -> assertThat(event.sourceTitle()).isNull());
-    }
-
-    @Test
-    void readEvents_givenVEventWithBlankSummary_thenSourceTitleIsNull() throws IOException {
-        var blankSummaryVEvent = "BEGIN:VEVENT\n"
-                + "UID:blank-summary-uid\n"
-                + "DTSTAMP:20260101T000000Z\n"
-                + "DTSTART;TZID=Europe/Berlin:20260201T100000\n"
-                + "DTEND;TZID=Europe/Berlin:20260201T110000\n"
-                + "SUMMARY:   \n"
-                + "END:VEVENT\n";
-        var uri = startServer(207, multiStatusWithCalendarData(icsCalendar(blankSummaryVEvent)), null);
-
-        var events = adapter(uri).readEvents();
-
-        assertThat(events).singleElement().satisfies(event -> assertThat(event.sourceTitle()).isNull());
     }
 
     // --- Recurring series expansion ---
@@ -722,13 +684,9 @@ class CalDavCalendarSourceAdapterTest {
                     assertThat(event.start()).isEqualTo(ZonedDateTime.of(2026, 2, 10, 14, 0, 0, 0, BERLIN));
                     assertThat(event.end()).isEqualTo(ZonedDateTime.of(2026, 2, 10, 15, 0, 0, 0, BERLIN));
                     assertThat(event.recurring()).isTrue();
-                    assertThat(event.sourceTitle()).isEqualTo("Occurrence override");
                 });
         assertThat(events)
                 .noneMatch(event -> event.start().equals(ZonedDateTime.of(2026, 2, 9, 10, 0, 0, 0, BERLIN)));
-        assertThat(events)
-                .filteredOn(event -> !event.sourceUid().equals(expectedSourceUid))
-                .allSatisfy(event -> assertThat(event.sourceTitle()).isEqualTo("Weekly thing"));
     }
 
     @Test
@@ -889,8 +847,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Some private thing"));
+                        false));
     }
 
     @Test
@@ -935,8 +892,7 @@ class CalDavCalendarSourceAdapterTest {
                         false,
                         true,
                         false,
-                        false,
-                        "Some private thing"));
+                        false));
     }
 
     @Test
@@ -1031,8 +987,7 @@ class CalDavCalendarSourceAdapterTest {
                 false,
                 true,
                 false,
-                false,
-                "Some private thing");
+                false);
         assertThat(firstCallEvents).containsExactly(expectedEvent);
         assertThat(secondCallEvents).containsExactly(expectedEvent);
 

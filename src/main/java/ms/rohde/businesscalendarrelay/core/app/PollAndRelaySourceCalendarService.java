@@ -219,16 +219,9 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
 
     private void processCreate(RelayAction.Create action, List<String> created, List<RelayFailure> failed) {
         var blockerEvent = new BlockerEvent(
-                action.blockerUid(),
-                action.sequence(),
-                action.start(),
-                action.end(),
-                organizerEmail,
-                attendeeEmail,
-                action.sourceTitle());
+                action.blockerUid(), action.sequence(), action.start(), action.end(), organizerEmail, attendeeEmail);
         var icsText = renderer.renderRequest(blockerEvent, clock.instant());
-        var mail = new BlockerMail(
-                icsText, BlockerMailMethod.REQUEST, fromAddress, replyToAddress, attendeeEmail, action.sourceTitle());
+        var mail = new BlockerMail(icsText, BlockerMailMethod.REQUEST, fromAddress, replyToAddress, attendeeEmail);
 
         if (!trySend(mail, action.sourceUid(), "create", failed)) {
             return;
@@ -252,16 +245,9 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
 
     private void processUpdate(RelayAction.Update action, List<String> updated, List<RelayFailure> failed) {
         var blockerEvent = new BlockerEvent(
-                action.blockerUid(),
-                action.sequence(),
-                action.start(),
-                action.end(),
-                organizerEmail,
-                attendeeEmail,
-                action.sourceTitle());
+                action.blockerUid(), action.sequence(), action.start(), action.end(), organizerEmail, attendeeEmail);
         var icsText = renderer.renderRequest(blockerEvent, clock.instant());
-        var mail = new BlockerMail(
-                icsText, BlockerMailMethod.REQUEST, fromAddress, replyToAddress, attendeeEmail, action.sourceTitle());
+        var mail = new BlockerMail(icsText, BlockerMailMethod.REQUEST, fromAddress, replyToAddress, attendeeEmail);
 
         if (!trySend(mail, action.sourceUid(), "update", failed)) {
             return;
@@ -285,16 +271,9 @@ public final class PollAndRelaySourceCalendarService implements PollAndRelaySour
 
     private void processCancel(RelayAction.Cancel action, List<String> cancelled, List<RelayFailure> failed) {
         var blockerEvent = new BlockerEvent(
-                action.blockerUid(),
-                action.sequence(),
-                action.start(),
-                action.end(),
-                organizerEmail,
-                attendeeEmail,
-                null);
+                action.blockerUid(), action.sequence(), action.start(), action.end(), organizerEmail, attendeeEmail);
         var icsText = renderer.renderCancel(blockerEvent, clock.instant());
-        var mail = new BlockerMail(
-                icsText, BlockerMailMethod.CANCEL, fromAddress, replyToAddress, attendeeEmail, null);
+        var mail = new BlockerMail(icsText, BlockerMailMethod.CANCEL, fromAddress, replyToAddress, attendeeEmail);
 
         if (!trySend(mail, action.sourceUid(), "cancel", failed)) {
             return;
