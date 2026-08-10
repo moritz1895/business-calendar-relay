@@ -651,17 +651,17 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
      * (§2.11) mandates that a conformant parser normalize every {@code CRLF}/{@code CR}
      * in element text content down to a single {@code LF} before handing it to the
      * application, which is exactly what {@link #extractCalendarDataBlobs}/{@link
-     * #parseSyncCollectionResponse} do via {@code getTextContent()}. ical4j's parser only
-     * recognizes {@code CRLF} + whitespace as a fold -- a bare {@code LF} + whitespace
-     * continuation line is instead read as a bogus new content line, which silently
-     * corrupts parsing of whatever property follows it in the same {@code VEVENT} (observed
-     * directly: real calendar entries with a folded, over-75-octet {@code SUMMARY}/{@code
-     * LOCATION} lost their immediately following {@code DTSTART}). Converting every newline
-     * back to {@code CRLF} here is safe -- {@code calendar-data} is 100% ICS text, which
-     * never legitimately contains a lone {@code LF} outside of a line ending.
+     * #parseSyncCollectionResponse} do via {@code getTextContent()} -- so every {@code
+     * calendarData} value reaching this method is guaranteed already {@code LF}-only, never
+     * a raw {@code CR}/{@code CRLF}, and a plain one-way replace is sufficient. ical4j's
+     * parser only recognizes {@code CRLF} + whitespace as a fold -- a bare {@code LF} +
+     * whitespace continuation line is instead read as a bogus new content line, which
+     * silently corrupts parsing of whatever property follows it in the same {@code VEVENT}
+     * (observed directly: real calendar entries with a folded, over-75-octet {@code
+     * SUMMARY}/{@code LOCATION} lost their immediately following {@code DTSTART}).
      */
     private static String restoreLineFolding(String calendarData) {
-        return calendarData.replace("\r\n", "\n").replace("\n", "\r\n");
+        return calendarData.replace("\n", "\r\n");
     }
 
     /**
