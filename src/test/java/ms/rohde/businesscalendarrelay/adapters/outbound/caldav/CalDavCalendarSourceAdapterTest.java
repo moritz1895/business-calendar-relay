@@ -460,6 +460,61 @@ class CalDavCalendarSourceAdapterTest {
     }
 
     @Test
+    void readEvents_givenVEventWithFoldedSummaryBeforeDtStart_thenStillParsesInsteadOfSkipping() throws IOException {
+        // A real, over-75-octet SUMMARY as sent RFC-5545-folded (CRLF + one leading space)
+        // by a real CalDAV server. Once carried through this test's own multistatus XML,
+        // XML's mandatory CRLF->LF end-of-line normalization (XML 1.0 §2.11) leaves ical4j
+        // with a bare-LF continuation it cannot recognize as a fold unless
+        // CalDavCalendarSourceAdapter restores CRLF first -- exactly reproducing a real
+        // production event (a long German venue address) that lost its DTSTART this way.
+        var foldedSummaryVEvent = "BEGIN:VEVENT\n"
+                + "UID:folded-summary-uid\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "SUMMARY:MERKUR SPIEL-ARENA\\, Arena-Strasse 1\\, 40474 Duesseldorf\\, Deuts\n"
+                + " chland\n"
+                + "DTSTART;TZID=Europe/Berlin:20260201T100000\n"
+                + "DTEND;TZID=Europe/Berlin:20260201T110000\n"
+                + "END:VEVENT\n";
+        var uri = startServer(207, multiStatusWithCalendarData(icsCalendar(foldedSummaryVEvent)), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "folded-summary-uid",
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenVEventWithDurationInsteadOfDtEnd_thenComputesEndFromDuration() throws IOException {
+        var durationVEvent = "BEGIN:VEVENT\n"
+                + "UID:duration-uid\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "DTSTART;TZID=Europe/Berlin:20260201T100000\n"
+                + "DURATION:PT3600S\n"
+                + "SUMMARY:Legacy client birthday reminder\n"
+                + "END:VEVENT\n";
+        var uri = startServer(207, multiStatusWithCalendarData(icsCalendar(durationVEvent)), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "duration-uid",
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
     void readEvents_givenMalformedMultiStatusXml_thenThrowsCalDavCalendarSourceException() throws IOException {
         var uri = startServer(207, "not even xml <<<", null);
 
@@ -672,6 +727,29 @@ class CalDavCalendarSourceAdapterTest {
 
         assertThat(events).hasSize(3);
         assertThat(events).allSatisfy(event -> assertThat(event.cancelled()).isTrue());
+    }
+
+    @Test
+    void readEvents_givenRecurringSeriesMasterWithDurationInsteadOfDtEnd_thenEveryOccurrenceGetsDurationBasedEnd()
+            throws IOException {
+        // Mirrors a real, years-old yearly birthday reminder produced by a legacy CalDAV
+        // client: DTSTART + DURATION, never DTEND -- fully valid per RFC 5545's
+        // DTEND/DURATION mutual-exclusion rule.
+        var yearlyMasterWithDuration = "BEGIN:VEVENT\n"
+                + "UID:" + SERIES_UID + "\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "DTSTART;TZID=Europe/Berlin:20260202T100000\n"
+                + "DURATION:PT3600S\n"
+                + "RRULE:FREQ=WEEKLY;BYDAY=MO\n"
+                + "SUMMARY:Weekly thing\n"
+                + "END:VEVENT\n";
+        var uri = startServer(207, multiStatusWithCalendarData(icsCalendar(yearlyMasterWithDuration)), null);
+
+        var events = adapter(uri, seriesClock(), seriesHorizon()).readEvents();
+
+        assertThat(events).hasSize(3);
+        assertThat(events)
+                .allSatisfy(event -> assertThat(event.end()).isEqualTo(event.start().plusHours(1)));
     }
 
     // --- Delta sync (sync-collection, RFC 6578) ---
