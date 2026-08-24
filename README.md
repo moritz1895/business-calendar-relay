@@ -443,6 +443,12 @@ interne Maven-Repository auf (`settings.xml`, siehe
 ein containerisierter Build funktioniert daher auch auf einer frischen
 Maschine, solange diese das interne Repository erreichen kann.
 
+Beide Compose-Dateien begrenzen die Container-Logs auf 3 × 10 MB (Docker
+rotiert/verwirft den Rest automatisch) — Dockers Standard-`json-file`-Treiber
+räumt Logs sonst nie von selbst auf, und bei `restart: unless-stopped` wird
+der Container nie automatisch entfernt, wächst die Logdatei auf dem Host
+also unbegrenzt.
+
 ### Deployment auf einem anderen Docker-Host (ohne Build-Toolchain dort)
 
 Für ein Zielsystem, das gar keinen Zugriff auf das interne Maven-Repository
