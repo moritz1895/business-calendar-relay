@@ -177,6 +177,7 @@ für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 | `RELAY_ATTENDEE_EMAIL` | Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail geht — ebenfalls global, ein Wert für alle Kalender. | — (erforderlich) |
 | `RELAY_FROM_ADDRESS` | `From`/Envelope-From der iMIP-Mail — ebenfalls global. | — (erforderlich) |
 | `RELAY_REPLY_TO_ADDRESS` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) — ebenfalls global. | — (erforderlich) |
+| `TZ` | Zeitzone, in der Log-Zeitstempel (siehe `log4j2.xml`) ausgegeben werden. Die JVM löst dies gegen ihre eigene, mitgelieferte tzdb auf — unabhängig vom Alpine-Base-Image, das kein `tzdata`-Paket enthält. | `Europe/Berlin` |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert).
@@ -310,6 +311,18 @@ Use-Case-Instanzen erst zur Laufzeit aus `relay.calendars` feststeht. Das
 Ergebnis jedes Zyklus wird geloggt: INFO bei einem sauberen Durchlauf, WARN
 mit den betroffenen `sourceUid`s, sobald mindestens ein Versand fehlgeschlagen
 ist.
+
+`CalDavCalendarSourceAdapter` und `GoogleCalendarSourceAdapter` teilen sich
+je einen einzigen, langlebigen `HttpClient` (siehe
+`RelayWiringConfiguration`) über die gesamte Anwendungslaufzeit — dessen
+gepoolte Verbindungen liegen zwischen zwei Polls den vollen
+`relay.poll-interval` lang idle, lange genug, dass der Server oder ein
+zwischengeschalteter Proxy sie lautlos schließt. Ein `IOException` beim
+Senden (typisch: `EOFException`, `SocketException: Connection reset`,
+`SSLHandshakeException: Remote host terminated the handshake`) wird deshalb
+einmal automatisch mit frischer Verbindung wiederholt, bevor der Zyklus als
+fehlgeschlagen gilt — ein zweiter, unmittelbar folgender Fehlschlag gilt als
+echter Ausfall.
 
 ## Dokumentation
 

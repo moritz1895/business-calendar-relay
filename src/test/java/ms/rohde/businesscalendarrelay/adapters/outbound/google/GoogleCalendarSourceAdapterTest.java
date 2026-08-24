@@ -314,6 +314,68 @@ class GoogleCalendarSourceAdapterTest {
                         false));
     }
 
+    /**
+     * Simulates a stale pooled connection that Google's front-end (or an intermediate
+     * proxy) has already silently closed: the first events-list request is read and then
+     * dropped without any response, exactly as {@code httpClient}'s reused connection would
+     * surface it, while every subsequent request succeeds normally -- proving {@code
+     * GoogleCalendarSourceAdapter}'s single retry recovers from it.
+     */
+    @Test
+    void readEvents_givenConnectionDropsOnFirstEventsListAttempt_thenRetriesAndReturnsMappedSourceEvent()
+            throws IOException {
+        var eventsRequestCount = new AtomicInteger(0);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(TOKEN_PATH, exchange -> respond(exchange, fixedTokenResponse()));
+        server.createContext(EVENTS_PATH, exchange -> {
+            if (eventsRequestCount.getAndIncrement() == 0) {
+                exchange.getRequestBody().readAllBytes();
+                exchange.close();
+                return;
+            }
+            respond(
+                    exchange,
+                    query -> new StubResponse(
+                            200,
+                            eventsListBody(
+                                    "sync-1",
+                                    List.of(simpleEventJson(
+                                            "event1", "2026-02-01T10:00:00+01:00", "2026-02-01T11:00:00+01:00")))));
+        });
+        server.start();
+        var base = "http://127.0.0.1:" + server.getAddress().getPort();
+        var endpoints = new Endpoints(URI.create(base + TOKEN_PATH), URI.create(base + EVENTS_PATH));
+
+        var events = adapter(endpoints, neverTouchedReplicaStore(), false).readEvents();
+
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "event1",
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenConnectionDropsOnBothEventsListAttempts_thenThrowsGoogleCalendarSourceException()
+            throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(TOKEN_PATH, exchange -> respond(exchange, fixedTokenResponse()));
+        server.createContext(EVENTS_PATH, exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.close();
+        });
+        server.start();
+        var base = "http://127.0.0.1:" + server.getAddress().getPort();
+        var endpoints = new Endpoints(URI.create(base + TOKEN_PATH), URI.create(base + EVENTS_PATH));
+
+        assertThatThrownBy(() -> adapter(endpoints, neverTouchedReplicaStore(), false).readEvents())
+                .isInstanceOf(GoogleCalendarSourceException.class);
+    }
+
     @Test
     void readEvents_givenAllDayEvent_thenMapsToAllDaySourceEvent() throws IOException {
         var allDayEvent =

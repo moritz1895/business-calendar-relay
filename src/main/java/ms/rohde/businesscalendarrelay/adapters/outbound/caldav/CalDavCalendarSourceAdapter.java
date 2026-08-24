@@ -568,14 +568,34 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                 .build();
 
         try {
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new CalDavCalendarSourceException(
-                    "Failed to reach CalDAV server at " + calendarCollectionUri, e);
+            return sendWithStaleConnectionRetry(request);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new CalDavCalendarSourceException(
                     "Interrupted while reading from CalDAV server at " + calendarCollectionUri, e);
+        }
+    }
+
+    /**
+     * A single retry on {@link IOException}: {@code httpClient} (see {@code
+     * RelayWiringConfiguration}) is a long-lived singleton shared across every poll cycle,
+     * so its pooled connections sit idle for the whole {@code relay.poll-interval} between
+     * polls -- long enough for the server or an intermediate proxy to silently close them.
+     * The client only discovers this once it tries to reuse the connection, surfacing as
+     * {@code EOFException}/{@code SocketException}/{@code SSLHandshakeException} on the very
+     * next request. A fresh connection on retry resolves this immediately; a second
+     * consecutive failure is treated as a real outage rather than retried further.
+     */
+    private HttpResponse<String> sendWithStaleConnectionRetry(HttpRequest request) throws InterruptedException {
+        try {
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (IOException firstAttemptFailure) {
+            try {
+                return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            } catch (IOException secondAttemptFailure) {
+                throw new CalDavCalendarSourceException(
+                        "Failed to reach CalDAV server at " + calendarCollectionUri, secondAttemptFailure);
+            }
         }
     }
 
