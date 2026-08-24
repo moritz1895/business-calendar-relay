@@ -28,6 +28,7 @@ import java.time.ZonedDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import ms.rohde.businesscalendarrelay.core.domain.SourceEvent;
@@ -104,6 +105,33 @@ class CalDavCalendarSourceAdapterTest {
                         exchange.getRequestHeaders().getFirst("Depth"),
                         exchange.getRequestHeaders().getFirst("Content-Type"),
                         requestBody));
+            }
+            var payload = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/xml; charset=utf-8");
+            exchange.sendResponseHeaders(statusCode, payload.length);
+            try (OutputStream responseStream = exchange.getResponseBody()) {
+                responseStream.write(payload);
+            }
+        });
+        server.start();
+        return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + COLLECTION_PATH);
+    }
+
+    /**
+     * Simulates a stale pooled connection that the server (or an intermediate proxy) has
+     * already silently closed: the first request is read and then dropped without any
+     * response, exactly as {@code httpClient}'s reused connection would surface it, while
+     * every subsequent request succeeds normally -- proving {@code
+     * CalDavCalendarSourceAdapter}'s single retry recovers from it.
+     */
+    private URI startServerDroppingFirstRequest(int statusCode, String responseBody) throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var requestCount = new AtomicInteger(0);
+        server.createContext(COLLECTION_PATH, exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            if (requestCount.getAndIncrement() == 0) {
+                exchange.close();
+                return;
             }
             var payload = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/xml; charset=utf-8");
@@ -353,6 +381,36 @@ class CalDavCalendarSourceAdapterTest {
                         true,
                         false,
                         false));
+    }
+
+    @Test
+    void readEvents_givenConnectionDropsOnFirstAttempt_thenRetriesAndReturnsMappedSourceEvent() throws IOException {
+        var uri = startServerDroppingFirstRequest(207, cleanSingleEventMultiStatus());
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events)
+                .containsExactly(new SourceEvent(
+                        "event1-uid",
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, BERLIN),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, BERLIN),
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void readEvents_givenConnectionDropsOnBothAttempts_thenThrowsCalDavCalendarSourceException() throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(COLLECTION_PATH, exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.close();
+        });
+        server.start();
+        var uri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + COLLECTION_PATH);
+
+        assertThatThrownBy(() -> adapter(uri).readEvents()).isInstanceOf(CalDavCalendarSourceException.class);
     }
 
     @Test

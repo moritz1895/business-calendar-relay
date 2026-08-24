@@ -36,10 +36,29 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+    # Hikari's own default (10) is sized for concurrent web request handling. This service
+    # has no such concurrency against StateStore/CalendarReplicaStore/PendingCreationQueue --
+    # each configured source calendar's poll cycle runs on its own scheduler thread (see
+    # PollAndRelaySchedulerAdapter), sequentially against a single embedded H2 file, so a
+    # small pool is enough to avoid idle, otherwise-unused pooled connections wasting memory.
+    hikari:
+      maximum-pool-size: 4
+      minimum-idle: 1
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: update
+
+server:
+  tomcat:
+    # This service serves no REST API -- spring-boot-starter-web exists solely for
+    # actuator's /actuator/health endpoint (see management.endpoints below), polled by the
+    # Dockerfile HEALTHCHECK every 30s. Tomcat's own default (max 200, min-spare 10) is
+    # sized for real concurrent HTTP traffic and reserves memory (thread stacks, connector
+    # buffers) this workload never uses.
+    threads:
+      max: 8
+      min-spare: 2
 
 management:
   endpoints:
