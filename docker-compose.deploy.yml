@@ -19,6 +19,16 @@ services:
     # usage. Overridable per deployment via MEM_LIMIT/CPU_LIMIT.
     mem_limit: ${MEM_LIMIT:-512m}
     cpus: ${CPU_LIMIT:-1.0}
+    # Docker's default json-file log driver never rotates or expires log entries on its
+    # own -- with `restart: unless-stopped`, the container is never removed, so the log
+    # file on the host grows unbounded for as long as this service runs (which, logging
+    # one INFO line per configured calendar every relay.poll-interval, forever, adds up
+    # over months). Caps it at 3 x 10m = 30m total per container instead.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       # Zeitzone für Log-Zeitstempel (log4j2.xml) -- Dockerfile-Default: Europe/Berlin.
       # Die JVM löst TZ gegen ihre eigene, mitgelieferte tzdb auf, unabhängig vom
