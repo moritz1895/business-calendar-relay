@@ -246,4 +246,51 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- Spike: GraalVM native-image feasibility, see docs/spikes/graalvm-native-image.md.
+         "native" wires spring-boot-maven-plugin's process-aot goal to
+         native-maven-plugin's compile-no-fork goal automatically; both plugins'
+         versions come from spring-boot-starter-parent, nothing pinned here. -->
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Spike-only, not for merging: runs the existing test suite with the GraalVM
+             native-image tracing agent attached, so its own extensive ical4j/JSON-parsing
+             scenarios (docs/reference/*.eml-derived fixtures) surface most of the
+             reflection/resource metadata a native build needs, without touching real
+             production calendar credentials. Overrides argLine entirely (Maven's argLine
+             CLI/profile value replaces the default surefire config above), so it repeats
+             the Mockito inline-mock-maker flags the default block also needs. -->
+        <profile>
+            <id>native-agent-trace</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <useModulePath>false</useModulePath>
+                            <argLine>
+                                -XX:+EnableDynamicAgentLoading
+                                --add-opens java.base/java.lang=ALL-UNNAMED
+                                --add-opens java.base/java.util=ALL-UNNAMED
+                                --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+                                -agentlib:native-image-agent=config-merge-dir=${project.basedir}/src/main/resources/META-INF/native-image
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
