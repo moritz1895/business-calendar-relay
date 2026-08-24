@@ -1,0 +1,14 @@
+# Spike-only image, not part of the real build/deploy pipeline -- see
+# docs/spikes/graalvm-native-image.md. Installs Maven on top of the official GraalVM
+# native-image-community JDK image (which already ships gcc/cc for the native-image
+# linker step) so the project's own build can run inside a container that has both.
+FROM ghcr.io/graalvm/native-image-community:25
+
+ARG MAVEN_VERSION=3.9.9
+RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+    -o /tmp/maven.tar.gz \
+    && tar -xzf /tmp/maven.tar.gz -C /opt \
+    && rm /tmp/maven.tar.gz
+ENV PATH="/opt/apache-maven-${MAVEN_VERSION}/bin:${PATH}"
+
+WORKDIR /workspace
