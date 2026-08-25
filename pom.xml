@@ -260,6 +260,41 @@
                         <groupId>org.graalvm.buildtools</groupId>
                         <artifactId>native-maven-plugin</artifactId>
                     </plugin>
+                    <!-- Build-time bytecode enhancement replaces Hibernate's default
+                         runtime-generated HibernateProxy subclasses (one per @Entity,
+                         created unconditionally at SessionFactory bootstrap regardless
+                         of whether any association is actually lazy) with logic woven
+                         directly into the entity .class files at compile time.
+                         native-image cannot define classes at runtime at all, so without
+                         this the app fails during JPA bootstrap the moment Hibernate
+                         tries to generate the first entity's proxy, see
+                         docs/spikes/graalvm-native-image.md. version matches
+                         ${hibernate.version} as managed by spring-boot-starter-parent. -->
+                    <plugin>
+                        <groupId>org.hibernate.orm.tooling</groupId>
+                        <artifactId>hibernate-enhance-maven-plugin</artifactId>
+                        <!-- Deliberately not ${hibernate.version} (7.2.12.Final): the
+                             org.hibernate.orm.tooling:hibernate-enhance-maven-plugin
+                             artifact's own release cadence lags hibernate-core's,
+                             topping out at 7.0.0.Beta1 on Maven Central as of this
+                             spike. The enhancement bytecode format has historically
+                             stayed compatible across 7.x minors; flag for re-check if
+                             this plugin publishes a matching 7.2.x release later. -->
+                        <version>7.0.0.Beta1</version>
+                        <executions>
+                            <execution>
+                                <configuration>
+                                    <failOnError>true</failOnError>
+                                    <enableLazyInitialization>true</enableLazyInitialization>
+                                    <enableDirtyTracking>true</enableDirtyTracking>
+                                    <enableAssociationManagement>true</enableAssociationManagement>
+                                </configuration>
+                                <goals>
+                                    <goal>enhance</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
                 </plugins>
             </build>
         </profile>
