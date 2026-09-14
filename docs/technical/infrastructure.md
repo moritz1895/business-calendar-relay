@@ -75,44 +75,55 @@ in diesem Repo deckt dafür noch keinen Mount ab.
 
 ## `Dockerfile`: mehrstufiger Build
 
+Der Build erzeugt eine GraalVM-native-image-Binary statt eines JVM-Jars —
+siehe [`native-image-build.md`](native-image-build.md) für die vollständige
+Erklärung (Motivation, Hibernate-Bytecode-Provider-Problem, gemessener
+Ressourcenverbrauch). Dieser Abschnitt beschreibt nur die Docker-Mechanik:
+
 ```dockerfile
-FROM maven:3.9-eclipse-temurin-25 AS builder
+FROM ghcr.io/graalvm/native-image-community:25 AS builder
 WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -q
+COPY settings.xml pom.xml ./
+RUN mvn -s settings.xml dependency:go-offline -q
 COPY src ./src
-RUN mvn package -DskipTests -q
+RUN mvn -s settings.xml -Pnative -DskipTests -Dnet.bytebuddy.experimental=true -q native:compile
 
-FROM eclipse-temurin:25-jre-alpine AS runtime
+FROM ubuntu:24.04 AS runtime
 WORKDIR /app
 
-RUN addgroup -S relay && adduser -S relay -G relay \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 10001 relay && useradd -u 10001 -g relay -M -s /usr/sbin/nologin relay \
     && mkdir -p /app/data && chown -R relay:relay /app
 USER relay
 
-COPY --from=builder /app/target/*.jar app.jar
+COPY --from=builder /app/target/business-calendar-relay ./business-calendar-relay
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
+HEALTHCHECK --interval=30s --timeout=12s --start-period=15s --retries=3 \
+    CMD curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["sh", "-c", "exec ./business-calendar-relay $RELAY_NATIVE_OPTS"]
 ```
 
-- **Build-Stage**: `maven:3.9-eclipse-temurin-25`, Java 25. `pom.xml` wird
-  vor dem restlichen Quellcode kopiert und `mvn dependency:go-offline`
-  separat ausgeführt, damit der Dependency-Download-Layer im Docker-Cache
-  bleibt, solange sich `pom.xml` nicht ändert. Tests werden im Image-Build
-  nicht ausgeführt (`-DskipTests`) — CI/lokales `mvn clean install` ist die
-  Stelle, an der Tests laufen.
-- **Runtime-Stage**: schlankes `eclipse-temurin:25-jre-alpine` (nur JRE,
-  kein volles JDK, kein Maven). Läuft als eigens angelegter, nicht-privilegierter
-  Nutzer `relay` (nicht `root`), mit vorab angelegtem `/app/data` im
-  Besitz dieses Nutzers — dort landet der `STATE_STORE_DATA_DIR`-Mount.
-  Es wird nur das gebaute Jar aus der Build-Stage kopiert.
+- **Build-Stage**: `ghcr.io/graalvm/native-image-community:25` (Oracle Linux
+  10.1, glibc 2.39) mit separat installiertem Maven. `pom.xml` wird vor dem
+  restlichen Quellcode kopiert und `mvn dependency:go-offline` separat
+  ausgeführt, damit der Dependency-Download-Layer im Docker-Cache bleibt,
+  solange sich `pom.xml` nicht ändert. Tests werden im Image-Build nicht
+  ausgeführt (`-DskipTests`) — CI/lokales `mvn clean install` ist die
+  Stelle, an der Tests laufen. Die Auflösung von `ms.rohde:hexagonal-arch-*`
+  läuft über `settings.xml` gegen das interne Repository (siehe unten).
+- **Runtime-Stage**: `ubuntu:24.04` — glibc-kompatibel zur Builder-Stage
+  (beide auf glibc 2.39), mit `ca-certificates` (für SMTP-TLS-Validierung)
+  und `curl` (für den Healthcheck) nachinstalliert. Läuft als eigens
+  angelegter, nicht-privilegierter Nutzer `relay` (fest `uid:gid 10001`,
+  nicht `root`), mit vorab angelegtem `/app/data` im Besitz dieses Nutzers
+  — dort landet der `STATE_STORE_DATA_DIR`-Mount. Es wird nur die gebaute
+  Binary aus der Build-Stage kopiert, kein JRE/JDK im Runtime-Image.
 - **Healthcheck**: pollt `http://localhost:8080/actuator/health` alle 30s
-  (5s Timeout, 15s Startverzögerung, 3 Fehlversuche bis „unhealthy“) und
+  (12s Timeout, 15s Startverzögerung, 3 Fehlversuche bis „unhealthy“) und
   prüft auf `"status":"UP"` im JSON. Voraussetzung dafür ist die
   Actuator-Exposition in `application.yml`:
 
@@ -155,21 +166,16 @@ Lokale Werte gehören in eine `.env`-Datei (git-ignoriert, siehe
 `docker-compose.yml`, `application.yml` oder eingecheckte Konfigurationsdateien
 schreiben.
 
-## Bekannte Einschränkung: Dependency-Auflösung für `hexagonal-arch`
+## Dependency-Auflösung für `hexagonal-arch`
 
-Der Maven-Build im Docker-Image (`mvn dependency:go-offline` /
-`mvn package`) löst `ms.rohde:hexagonal-arch-annotations`,
+Der Maven-Build löst `ms.rohde:hexagonal-arch-annotations`,
 `ms.rohde:hexagonal-arch-spring` und `ms.rohde:hexagonal-arch-archunit` in
-der Version `1.0.0-SNAPSHOT` auf (siehe `pom.xml`,
-`<hexagonal-arch.version>1.0.0-SNAPSHOT</hexagonal-arch.version>`). Diese
-Artefakte liegen aktuell **nur** im lokalen Maven-Repository (`~/.m2`) der
-aktuellen Entwicklungsmaschine — es gibt kein erreichbares Remote-Repository
-(privat oder öffentlich), aus dem sie bezogen werden könnten.
-
-Ein containerisierter Build auf jeder anderen Maschine als der aktuellen
-Entwicklungsmaschine schlägt daher aktuell fehl, weil der Docker-Build in
-einer isolierten Umgebung ohne Zugriff auf das lokale `~/.m2` läuft und
-`1.0.0-SNAPSHOT` nirgends sonst auflösbar ist.
-
-Dies ist eine bekannte, unaufgelöste Lücke — dieses Dokument löst sie nicht;
-eine gesonderte, projektunabhängige Anleitung dafür wird separat vorbereitet.
+der Version `1.0.0` (final, kein SNAPSHOT mehr — siehe `pom.xml`,
+`<hexagonal-arch.version>1.0.0</hexagonal-arch.version>`) über das interne
+`internal-releases`-Repository auf, dessen Zugriff `settings.xml` regelt
+(dort auch der Mirror-Eintrag, der die interne Adresse gegenüber Maven
+Central bevorzugt). `settings.xml` wird im Builder-Stage-Kontext explizit
+mitkopiert und über `-s settings.xml` referenziert, damit ein
+containerisierter Build auch auf einer Maschine ohne den lokalen `~/.m2`-Cache
+funktioniert — vorausgesetzt, diese Maschine erreicht das interne
+Repository.

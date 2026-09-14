@@ -7,19 +7,19 @@ services:
     image: business-calendar-relay:latest
     ports:
       - "8080:8080"
-    # Without these, the JVM (see JAVA_OPTS in Dockerfile) sizes its heap and GC/JIT
-    # thread counts against the host's full RAM/core count instead of an actual budget --
-    # observed directly as >1GB RSS and sustained 200% CPU on a 16-core host for a
-    # background poller with no real HTTP traffic. 512m/1 CPU is a conservative starting
-    # point for this app's footprint (Spring Boot + Hibernate + embedded H2, no REST
-    # surface beyond actuator health); adjust after checking `docker stats` against real
-    # usage. Overridable per deployment via MEM_LIMIT/CPU_LIMIT.
-    mem_limit: ${MEM_LIMIT:-512m}
+    # The app runs as a GraalVM native-image binary (see Dockerfile,
+    # docs/technical/native-image-build.md), not on the JVM -- no JIT tiers, no heap sized
+    # against the host's full RAM/core count the way an untuned JVM would. Measured RSS is
+    # ~75-85MB idle (Spring Boot + Hibernate + embedded H2, no REST surface beyond actuator
+    # health); 256m/1 CPU leaves comfortable headroom over that. Adjust after checking
+    # `docker stats` against real usage. Overridable per deployment via MEM_LIMIT/CPU_LIMIT.
+    mem_limit: ${MEM_LIMIT:-256m}
     cpus: ${CPU_LIMIT:-1.0}
     environment:
       # Zeitzone für Log-Zeitstempel (log4j2.xml) -- Dockerfile-Default: Europe/Berlin.
-      # Die JVM löst TZ gegen ihre eigene, mitgelieferte tzdb auf, unabhängig vom
-      # Alpine-Base-Image (das kein tzdata-Paket enthält). Default: Europe/Berlin
+      # Die zur Build-Zeit von GraalVM native-image mitkompilierte tzdb löst dies auf,
+      # unabhängig vom Ubuntu-Basisimage (das selbst kein tzdata-Paket enthält). Default:
+      # Europe/Berlin
       TZ: ${TZ:-Europe/Berlin}
       # Hostname des SMTP-Relais für ausgehende iMIP-Mails (BlockerSink).
       # Kein Default -- erforderlich, siehe .env.example.
