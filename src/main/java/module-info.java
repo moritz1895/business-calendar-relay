@@ -15,6 +15,7 @@ open module ms.rohde.businesscalendarrelay {
     requires jakarta.validation;
     requires spring.data.jpa;
     requires spring.tx;
+    requires org.hibernate.orm.core;
     requires ms.rohde.hexagonalarch.annotations;
     requires ms.rohde.hexagonalarch.spring;
     requires java.net.http;
@@ -22,4 +23,7 @@ open module ms.rohde.businesscalendarrelay {
     requires ical4j.core;
     requires jdk.httpserver;
     requires tools.jackson.databind;
+
+    provides org.hibernate.service.spi.ServiceContributor
+            with ms.rohde.businesscalendarrelay.adapters.outbound.persistence.NoneBytecodeProviderServiceContributor;
 }

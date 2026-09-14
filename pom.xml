@@ -247,10 +247,12 @@
         </plugins>
     </build>
 
-    <!-- Spike: GraalVM native-image feasibility, see docs/spikes/graalvm-native-image.md.
+    <!-- GraalVM native-image production build, see docs/technical/native-image-build.md.
          "native" wires spring-boot-maven-plugin's process-aot goal to
          native-maven-plugin's compile-no-fork goal automatically; both plugins'
-         versions come from spring-boot-starter-parent, nothing pinned here. -->
+         versions come from spring-boot-starter-parent, nothing pinned here. Used by the
+         root Dockerfile; the plain JVM jar (mvn package, no profile) remains available for
+         local development via mvn spring-boot:run. -->
     <profiles>
         <profile>
             <id>native</id>

@@ -6,7 +6,9 @@
 #
 # Usage: ./build-and-export-image.sh [output-file]
 #   Re-run this any time the source changes; it always rebuilds from scratch (no cache)
-#   so the exported tarball never silently carries a stale layer.
+#   so the exported tarball never silently carries a stale layer. The build compiles a
+#   GraalVM native-image binary (see docs/technical/native-image-build.md), which takes
+#   several minutes -- expect this to run noticeably longer than a plain `mvn package`.
 #
 # On the target system:
 #   docker load -i business-calendar-relay-image.tar
