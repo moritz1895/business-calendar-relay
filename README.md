@@ -72,7 +72,7 @@ Architektur, Coding-Standards und der agentenbasierte Workflow sind in
 | Logging | Log4j2 |
 | Tests | JUnit 5, Mockito, AssertJ, ArchUnit (`hexagonal-arch-archunit`) |
 | Build | Maven |
-| Betrieb | Docker / Docker Compose |
+| Betrieb | Docker / Docker Compose — Container läuft als GraalVM-native-image-Binary, keine JVM zur Laufzeit (siehe [`docs/technical/native-image-build.md`](docs/technical/native-image-build.md)) |
 
 ## Voraussetzungen
 
@@ -177,7 +177,7 @@ für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 | `RELAY_ATTENDEE_EMAIL` | Adresse des dienstlichen Outlook-Postfachs, an das die iMIP-Mail geht — ebenfalls global, ein Wert für alle Kalender. | — (erforderlich) |
 | `RELAY_FROM_ADDRESS` | `From`/Envelope-From der iMIP-Mail — ebenfalls global. | — (erforderlich) |
 | `RELAY_REPLY_TO_ADDRESS` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) — ebenfalls global. | — (erforderlich) |
-| `TZ` | Zeitzone, in der Log-Zeitstempel (siehe `log4j2.xml`) ausgegeben werden. Die JVM löst dies gegen ihre eigene, mitgelieferte tzdb auf — unabhängig vom Alpine-Base-Image, das kein `tzdata`-Paket enthält. | `Europe/Berlin` |
+| `TZ` | Zeitzone, in der Log-Zeitstempel (siehe `log4j2.xml`) ausgegeben werden. Das native-image-Binary löst dies gegen seine eigene, zur Build-Zeit mitkompilierte tzdb auf — unabhängig vom `ubuntu:24.04`-Basisimage, das selbst kein `tzdata`-Paket enthält (siehe [`docs/technical/native-image-build.md`](docs/technical/native-image-build.md)). | `Europe/Berlin` |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert).
@@ -413,6 +413,16 @@ mvn spring-boot:run         # Lokal starten
 ```
 
 ## Docker
+
+Das Image wird über einen mehrstufigen `Dockerfile`-Build zu einem
+GraalVM-native-image-Binary kompiliert, nicht zu einem JVM-Jar — `docker
+compose up --build`/`build-and-export-image.sh` dauern dadurch spürbar
+länger als ein reiner `mvn package`-Build (native-image braucht allein für
+Analyse und Kompilierung mehrere Minuten). Der Container startet dafür in
+Bruchteilen einer Sekunde und läuft idle mit ~75-85MB RSS statt ~400-450MB
+auf der JVM. Details zum Build, dem gelösten Hibernate/ByteBuddy-Problem und
+der zugrunde liegenden Invariante stehen in
+[`docs/technical/native-image-build.md`](docs/technical/native-image-build.md).
 
 Vor dem ersten Start:
 

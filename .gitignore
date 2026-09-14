@@ -45,3 +45,6 @@ target/
 
 ### Standalone local deployment instance (real CalDAV URLs/usernames, real .env) ###
 /run/
+
+### build-and-export-image.sh output (regenerated on demand, not a build input) ###
+*.tar

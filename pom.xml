@@ -246,4 +246,88 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- GraalVM native-image production build, see docs/technical/native-image-build.md.
+         "native" wires spring-boot-maven-plugin's process-aot goal to
+         native-maven-plugin's compile-no-fork goal automatically; both plugins'
+         versions come from spring-boot-starter-parent, nothing pinned here. Used by the
+         root Dockerfile; the plain JVM jar (mvn package, no profile) remains available for
+         local development via mvn spring-boot:run. -->
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                    </plugin>
+                    <!-- Build-time bytecode enhancement replaces Hibernate's default
+                         runtime-generated HibernateProxy subclasses (one per @Entity,
+                         created unconditionally at SessionFactory bootstrap regardless
+                         of whether any association is actually lazy) with logic woven
+                         directly into the entity .class files at compile time.
+                         native-image cannot define classes at runtime at all, so without
+                         this the app fails during JPA bootstrap the moment Hibernate
+                         tries to generate the first entity's proxy, see
+                         docs/spikes/graalvm-native-image.md. version matches
+                         ${hibernate.version} as managed by spring-boot-starter-parent. -->
+                    <plugin>
+                        <groupId>org.hibernate.orm.tooling</groupId>
+                        <artifactId>hibernate-enhance-maven-plugin</artifactId>
+                        <!-- Deliberately not ${hibernate.version} (7.2.12.Final): the
+                             org.hibernate.orm.tooling:hibernate-enhance-maven-plugin
+                             artifact's own release cadence lags hibernate-core's,
+                             topping out at 7.0.0.Beta1 on Maven Central as of this
+                             spike. The enhancement bytecode format has historically
+                             stayed compatible across 7.x minors; flag for re-check if
+                             this plugin publishes a matching 7.2.x release later. -->
+                        <version>7.0.0.Beta1</version>
+                        <executions>
+                            <execution>
+                                <configuration>
+                                    <failOnError>true</failOnError>
+                                    <enableLazyInitialization>true</enableLazyInitialization>
+                                    <enableDirtyTracking>true</enableDirtyTracking>
+                                    <enableAssociationManagement>true</enableAssociationManagement>
+                                </configuration>
+                                <goals>
+                                    <goal>enhance</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Spike-only, not for merging: runs the existing test suite with the GraalVM
+             native-image tracing agent attached, so its own extensive ical4j/JSON-parsing
+             scenarios (docs/reference/*.eml-derived fixtures) surface most of the
+             reflection/resource metadata a native build needs, without touching real
+             production calendar credentials. Overrides argLine entirely (Maven's argLine
+             CLI/profile value replaces the default surefire config above), so it repeats
+             the Mockito inline-mock-maker flags the default block also needs. -->
+        <profile>
+            <id>native-agent-trace</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <useModulePath>false</useModulePath>
+                            <argLine>
+                                -XX:+EnableDynamicAgentLoading
+                                --add-opens java.base/java.lang=ALL-UNNAMED
+                                --add-opens java.base/java.util=ALL-UNNAMED
+                                --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+                                -agentlib:native-image-agent=config-merge-dir=${project.basedir}/src/main/resources/META-INF/native-image
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
