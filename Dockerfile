@@ -54,10 +54,11 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=12s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
 
-# Unlike the JVM, native-image binaries start with a fixed serial GC and no JIT compiler
-# tiers to tune away -- the elaborate heap/GC/thread flags a JVM deployment needs (see
-# git history) don't apply here. RELAY_NATIVE_OPTS is a plain passthrough for the rare
-# case a native-image runtime flag (e.g. -Xmx) is ever needed; empty by default.
-ENV RELAY_NATIVE_OPTS=""
+# Native-image binaries run a serial GC with no JIT tiers to tune. Without a heap cap
+# the GC sizes the maximum heap at 80% of the container memory limit and lets the heap
+# grow towards it before collecting, so RSS climbs far above the live data (measured at
+# most 76 MB across several polls). -Xmx128m keeps RSS at about 70-110 MB.
+# RELAY_NATIVE_OPTS passes runtime flags to the binary; override it to change the cap.
+ENV RELAY_NATIVE_OPTS="-Xmx128m"
 
 ENTRYPOINT ["sh", "-c", "exec ./business-calendar-relay $RELAY_NATIVE_OPTS"]

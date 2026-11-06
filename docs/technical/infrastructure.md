@@ -104,6 +104,8 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=12s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
 
+ENV RELAY_NATIVE_OPTS="-Xmx128m"
+
 ENTRYPOINT ["sh", "-c", "exec ./business-calendar-relay $RELAY_NATIVE_OPTS"]
 ```
 
@@ -145,6 +147,15 @@ ENTRYPOINT ["sh", "-c", "exec ./business-calendar-relay $RELAY_NATIVE_OPTS"]
   Zombie-Prozesse, bis das Task-Limit des Containers erreicht ist und die
   Anwendung keine Threads mehr starten kann
   (`OutOfMemoryError: unable to create native thread`).
+
+- **Heap-Grenze**: `RELAY_NATIVE_OPTS` reicht Laufzeit-Flags an die Binary
+  durch, Default `-Xmx128m`. Ohne Grenze setzt der Serial GC des
+  Native-Images den maximalen Heap auf 80 % des Container-Limits und räumt
+  erst kurz davor auf; der Speicher wächst dann weit über die tatsächlich
+  belegten Daten (gemessen höchstens 76 MB über mehrere Abgleiche). Mit
+  `-Xmx128m` liegt der Container bei etwa 70–110 MB; `docker-compose.yml`
+  setzt dazu `mem_limit` 192m (`MEM_LIMIT`). Wer den Heap erhöht, hebt das
+  Limit mit an.
 
 ## Umgebungsvariablen — operative Sicht
 
