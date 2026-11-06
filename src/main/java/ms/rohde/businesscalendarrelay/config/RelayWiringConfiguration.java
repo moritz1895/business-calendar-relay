@@ -28,7 +28,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -72,8 +71,8 @@ public class RelayWiringConfiguration {
         return Clock.systemUTC();
     }
 
-    @Bean(destroyMethod = "shutdown")
-    TaskScheduler relayTaskScheduler(RelayProperties relayProperties) {
+    @Bean
+    ThreadPoolTaskScheduler relayTaskScheduler(RelayProperties relayProperties) {
         var scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(Math.max(MINIMUM_TASK_SCHEDULER_POOL_SIZE, relayProperties.calendars().size()));
         scheduler.setThreadNamePrefix("relay-poll-");
