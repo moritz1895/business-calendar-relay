@@ -7,6 +7,13 @@ services:
     image: business-calendar-relay:latest
     ports:
       - "8080:8080"
+    # Runs a minimal init (tini) as PID 1 that reaps orphaned child processes. The
+    # Dockerfile HEALTHCHECK is a shell pipeline (curl | grep); when a check exceeds its
+    # timeout, Docker kills only the shell, and curl and grep are reparented to PID 1.
+    # The application process never reaps them, so without an init every timed-out
+    # check leaves two zombies behind until the container's task limit is full and the
+    # application can no longer start threads.
+    init: true
     # The app runs as a GraalVM native-image binary (see Dockerfile,
     # docs/technical/native-image-build.md), not on the JVM -- no JIT tiers, no heap sized
     # against the host's full RAM/core count the way an untuned JVM would. Measured RSS is
