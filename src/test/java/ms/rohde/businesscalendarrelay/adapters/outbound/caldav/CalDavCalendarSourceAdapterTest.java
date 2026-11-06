@@ -2,6 +2,7 @@ package ms.rohde.businesscalendarrelay.adapters.outbound.caldav;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.times;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -25,18 +27,23 @@ import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.zone.ZoneRulesProvider;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import javax.management.JMException;
+import javax.management.ObjectName;
 import ms.rohde.businesscalendarrelay.core.domain.SourceEvent;
 import ms.rohde.businesscalendarrelay.ports.outbound.CachedCalendarResource;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStore;
 import ms.rohde.businesscalendarrelay.ports.outbound.CalendarReplicaStoreException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Exercises {@link CalDavCalendarSourceAdapter} against a real local HTTP server, since
@@ -346,6 +353,117 @@ class CalDavCalendarSourceAdapterTest {
                 + "END:VEVENT\r\n"
                 + "END:VCALENDAR\r\n";
         return multiStatusWithCalendarData(ics);
+    }
+
+    /**
+     * Every poll re-parses every resource of the calendar. Parsing must not leave anything
+     * behind in JVM-global state: a zone rules provider registered per parse is never
+     * removed again and grows the heap with every poll for as long as the process runs.
+     */
+    @Test
+    void readEvents_givenResourcesWithVTimezone_thenRegistersNoGlobalZoneRules() throws IOException {
+        var resources = new String[25];
+        for (int i = 0; i < resources.length; i++) {
+            resources[i] = icsWithSingleVEvent("event" + i + "-uid", "20260201T100000", "20260201T110000");
+        }
+        var uri = startServer(207, multiStatusWithCalendarData(resources), null);
+        var zoneIdsBefore = ZoneRulesProvider.getAvailableZoneIds().size();
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events).hasSize(resources.length);
+        assertThat(ZoneRulesProvider.getAvailableZoneIds()).hasSize(zoneIdsBefore);
+    }
+
+    /**
+     * ical4j compiles a {@code VTIMEZONE} block into its own zone rules on every parse,
+     * about 3.7 MB of short-lived objects per resource, while this adapter resolves every
+     * {@code TZID} through {@link ZoneId#of(String)} and never uses those rules. A real
+     * calendar re-parses well over a thousand such resources per poll.
+     */
+    @Test
+    void readEvents_givenResourcesWithIanaVTimezone_thenAllocatesLessThanOneMegabytePerResource() throws Exception {
+        var resources = new String[25];
+        for (int i = 0; i < resources.length; i++) {
+            resources[i] = icsWithSingleVEvent("event" + i + "-uid", "20260201T100000", "20260201T110000");
+        }
+        var uri = startServer(207, multiStatusWithCalendarData(resources), null);
+        var adapter = adapter(uri);
+        adapter.readEvents();
+        var allocatedBefore = currentThreadAllocatedBytes();
+
+        var events = adapter.readEvents();
+
+        var allocatedPerResource = (currentThreadAllocatedBytes() - allocatedBefore) / resources.length;
+        assertThat(events).hasSize(resources.length);
+        assertThat(allocatedPerResource).isLessThan(1024 * 1024);
+    }
+
+    private static long currentThreadAllocatedBytes() throws JMException {
+        return (long) ManagementFactory.getPlatformMBeanServer().invoke(
+                new ObjectName(ManagementFactory.THREAD_MXBEAN_NAME),
+                "getThreadAllocatedBytes",
+                new Object[] {Thread.currentThread().threadId()},
+                new String[] {long.class.getName()});
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Europe/Madrid", "Africa/Nairobi", "America/New_York", "Asia/Kolkata"})
+    void readEvents_givenEventInIanaZoneWithVTimezone_thenResolvesStartInThatZone(String tzid) throws IOException {
+        var ics = icsWithSingleVEvent("event-uid", "20260201T100000", "20260201T110000")
+                .replace("Europe/Berlin", tzid);
+        var uri = startServer(207, multiStatusWithCalendarData(ics), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events)
+                .extracting(SourceEvent::start, SourceEvent::end)
+                .containsExactly(tuple(
+                        ZonedDateTime.of(2026, 2, 1, 10, 0, 0, 0, ZoneId.of(tzid)),
+                        ZonedDateTime.of(2026, 2, 1, 11, 0, 0, 0, ZoneId.of(tzid))));
+    }
+
+    @Test
+    void readEvents_givenEventWithNonIanaTzid_thenSkipsOnlyThatEvent() throws IOException {
+        var windowsZoneEvent = icsWithSingleVEvent("windows-zone-uid", "20260201T100000", "20260201T110000")
+                .replace("Europe/Berlin", "W. Europe Standard Time");
+        var regularEvent = icsWithSingleVEvent("regular-uid", "20260202T100000", "20260202T110000");
+        var uri = startServer(207, multiStatusWithCalendarData(windowsZoneEvent, regularEvent), null);
+
+        var events = adapter(uri).readEvents();
+
+        assertThat(events).extracting(SourceEvent::sourceUid).containsExactly("regular-uid");
+    }
+
+    @Test
+    void readEvents_givenRecurringEventWithExdateAndOverride_thenReadsValuesWithoutVTimezone() throws IOException {
+        var master = "BEGIN:VEVENT\n"
+                + "UID:series-uid\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "DTSTART;TZID=Africa/Nairobi:20260202T090000\n"
+                + "DTEND;TZID=Africa/Nairobi:20260202T100000\n"
+                + "RRULE:FREQ=WEEKLY;COUNT=4\n"
+                + "EXDATE;TZID=Africa/Nairobi:20260209T090000,20260216T090000\n"
+                + "END:VEVENT\n";
+        var override = "BEGIN:VEVENT\n"
+                + "UID:series-uid\n"
+                + "DTSTAMP:20260101T000000Z\n"
+                + "RECURRENCE-ID;TZID=Africa/Nairobi:20260223T090000\n"
+                + "DTSTART;TZID=Africa/Nairobi:20260223T140000\n"
+                + "DTEND;TZID=Africa/Nairobi:20260223T150000\n"
+                + "END:VEVENT\n";
+        var ics = icsCalendar(master, override).replace("Europe/Berlin", "Africa/Nairobi");
+        var uri = startServer(207, multiStatusWithCalendarData(ics), null);
+        var clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+
+        var events = adapter(uri, clock, Period.ofYears(1)).readEvents();
+
+        var nairobi = ZoneId.of("Africa/Nairobi");
+        assertThat(events)
+                .extracting(SourceEvent::start)
+                .containsExactly(
+                        ZonedDateTime.of(2026, 2, 2, 9, 0, 0, 0, nairobi),
+                        ZonedDateTime.of(2026, 2, 23, 14, 0, 0, 0, nairobi));
     }
 
     @Test

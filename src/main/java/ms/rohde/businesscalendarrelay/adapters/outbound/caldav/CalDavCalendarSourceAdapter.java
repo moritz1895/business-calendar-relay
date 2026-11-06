@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.Temporal;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -139,6 +141,16 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
      * events are never creation-eligible per {@code RelayDiffPlanner}'s gate.
      */
     private static final ZoneId ALL_DAY_ZONE = ZoneId.of("Europe/Berlin");
+
+    private static final String LINE_BREAK = "\r\n";
+
+    private static final String VTIMEZONE_BEGIN_LINE = LINE_BREAK + "BEGIN:VTIMEZONE" + LINE_BREAK;
+
+    private static final String VTIMEZONE_END_LINE = LINE_BREAK + "END:VTIMEZONE" + LINE_BREAK;
+
+    private static final DateTimeFormatter BASIC_LOCAL_DATE_TIME = DateTimeFormatter.ofPattern("uuuuMMdd'T'HHmmss");
+
+    private static final String UTC_DESIGNATOR = "Z";
 
     /**
      * Lower bound used for recurrence expansion. Deliberately not a computed "far past"
@@ -656,7 +668,8 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
     private List<VEvent> parseVEvents(String calendarData) {
         Calendar calendar;
         try {
-            calendar = new CalendarBuilder().build(new StringReader(restoreLineFolding(calendarData)));
+            calendar = new CalendarBuilder()
+                    .build(new StringReader(withoutTimeZoneDefinitions(restoreLineFolding(calendarData))));
         } catch (IOException | ParserException e) {
             throw new CalDavCalendarSourceException("Malformed calendar-data from " + calendarCollectionUri, e);
         }
@@ -682,6 +695,36 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
      */
     private static String restoreLineFolding(String calendarData) {
         return calendarData.replace("\n", "\r\n");
+    }
+
+    /**
+     * Removes every {@code VTIMEZONE} block before parsing. This adapter reads each date
+     * property's raw value and resolves its {@code TZID} parameter itself through {@link
+     * ZoneId#of(String)} (see {@link #toZonedDateTime(String, String, String, DateForm)}), so
+     * the definitions are never used. Left in place, ical4j would compile each one into zone
+     * rules on every parse -- about 3.7 MB of short-lived objects per resource, with every
+     * resource re-parsed on every poll -- and draw one ID from its bounded, process-wide pool
+     * of custom zone IDs (1500 by default), which a single poll of a large calendar can exhaust
+     * before the garbage collector returns any.
+     */
+    private static String withoutTimeZoneDefinitions(String calendarData) {
+        var blockStart = calendarData.indexOf(VTIMEZONE_BEGIN_LINE);
+        if (blockStart < 0) {
+            return calendarData;
+        }
+        var result = new StringBuilder(calendarData.length());
+        var copiedUpTo = 0;
+        while (blockStart >= 0) {
+            var endLine = calendarData.indexOf(VTIMEZONE_END_LINE, blockStart);
+            if (endLine < 0) {
+                break;
+            }
+            var blockEnd = endLine + VTIMEZONE_END_LINE.length() - LINE_BREAK.length();
+            result.append(calendarData, copiedUpTo, blockStart);
+            copiedUpTo = blockEnd;
+            blockStart = calendarData.indexOf(VTIMEZONE_BEGIN_LINE, blockEnd);
+        }
+        return result.append(calendarData, copiedUpTo, calendarData.length()).toString();
     }
 
     /**
@@ -865,8 +908,8 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
         List<ExDate<?>> exDateProperties = master.getProperties(Property.EXDATE);
         var exceptionDates = new HashSet<ZonedDateTime>();
         for (var exDate : exDateProperties) {
-            for (Temporal date : exDate.getDates()) {
-                exceptionDates.add(toZonedDateTime(uid, exDate.getName(), date, masterForm));
+            for (var value : exDate.getValue().split(",")) {
+                exceptionDates.add(toZonedDateTime(uid, exDate.getName(), value, masterForm));
             }
         }
         return exceptionDates;
@@ -879,7 +922,7 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
                     .<RecurrenceId<?>>getProperty(Property.RECURRENCE_ID)
                     .orElseThrow(() ->
                             new CalDavCalendarSourceException("VEVENT " + uid + " override is missing RECURRENCE-ID"));
-            var occurrence = toZonedDateTime(uid, recurrenceId.getName(), recurrenceId.getDate(), masterForm);
+            var occurrence = toZonedDateTime(uid, recurrenceId.getName(), recurrenceId.getValue(), masterForm);
             byOccurrence.merge(
                     occurrence,
                     override,
@@ -948,18 +991,28 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
 
     private DateForm formOf(DateProperty<?> dateProperty) {
         return new DateForm(
-                isDateOnlyValue(dateProperty), dateProperty.<TzId>getParameter(Property.TZID), dateProperty.isUtc());
+                isDateOnlyValue(dateProperty),
+                dateProperty.<TzId>getParameter(Property.TZID),
+                dateProperty.getValue().endsWith(UTC_DESIGNATOR));
     }
 
     private ZonedDateTime toZonedDateTime(String uid, DateProperty<?> dateProperty) {
-        return toZonedDateTime(uid, dateProperty.getName(), dateProperty.getDate(), formOf(dateProperty));
+        return toZonedDateTime(uid, dateProperty.getName(), dateProperty.getValue(), formOf(dateProperty));
     }
 
-    private ZonedDateTime toZonedDateTime(String uid, String propertyName, Temporal rawValue, DateForm form) {
+    /**
+     * Converts a date property's raw value as written in the calendar data ({@code
+     * 20260201T100000}, {@code 20260201T090000Z} or {@code 20260201}) instead of ical4j's
+     * resolved {@code getDate()}, which would resolve the {@code TZID} through ical4j's own zone
+     * registry -- a registry this adapter does not need and that does not work in the native
+     * image once the {@code VTIMEZONE} blocks are removed (see {@link
+     * #withoutTimeZoneDefinitions(String)}).
+     */
+    private ZonedDateTime toZonedDateTime(String uid, String propertyName, String rawValue, DateForm form) {
         if (form.valueIsDate()) {
             LocalDate localDate;
             try {
-                localDate = LocalDate.from(rawValue);
+                localDate = LocalDate.parse(rawValue, DateTimeFormatter.BASIC_ISO_DATE);
             } catch (RuntimeException e) {
                 throw new CalDavCalendarSourceException(
                         "VEVENT " + uid + " has a " + propertyName + " with VALUE=DATE that could not be parsed", e);
@@ -969,19 +1022,33 @@ public final class CalDavCalendarSourceAdapter implements CalendarSource {
 
         LocalDateTime localDateTime;
         try {
-            localDateTime = LocalDateTime.from(rawValue);
+            localDateTime = LocalDateTime.parse(withoutUtcDesignator(rawValue), BASIC_LOCAL_DATE_TIME);
         } catch (RuntimeException e) {
             throw new CalDavCalendarSourceException(
                     "VEVENT " + uid + " has a " + propertyName + " without a time component", e);
         }
 
         if (form.tzId().isPresent()) {
-            return ZonedDateTime.of(localDateTime, ZoneId.of(form.tzId().get().getValue()));
+            var tzId = form.tzId().get().getValue();
+            ZoneId zone;
+            try {
+                zone = ZoneId.of(tzId);
+            } catch (DateTimeException e) {
+                throw new CalDavCalendarSourceException(
+                        "VEVENT " + uid + " has a " + propertyName + " with unknown TZID " + tzId, e);
+            }
+            return ZonedDateTime.of(localDateTime, zone);
         }
         if (form.utc()) {
             return ZonedDateTime.of(localDateTime, ZoneOffset.UTC);
         }
         throw new CalDavCalendarSourceException(
                 "VEVENT " + uid + " has a " + propertyName + " with neither a TZID parameter nor a UTC designator");
+    }
+
+    private static String withoutUtcDesignator(String rawValue) {
+        return rawValue.endsWith(UTC_DESIGNATOR)
+                ? rawValue.substring(0, rawValue.length() - UTC_DESIGNATOR.length())
+                : rawValue;
     }
 }

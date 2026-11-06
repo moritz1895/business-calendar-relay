@@ -249,7 +249,15 @@ von **allen** konfigurierten Kalender-Adapterinstanzen gemeinsam genutzt.
    `CalendarReplicaStore` zwischengespeichert, siehe oben).
 3. **ICS-Parsing pro Blob**: jeder Blob wird über `ical4j`
    (`net.fortuna.ical4j`, `CalendarBuilder`) geparst; alle enthaltenen
-   `VEVENT`-Komponenten werden extrahiert.
+   `VEVENT`-Komponenten werden extrahiert. Vorher entfernt der Adapter alle
+   `VTIMEZONE`-Blöcke aus dem Text (`withoutTimeZoneDefinitions`): Er löst
+   jede `TZID` selbst über `ZoneId.of` auf (siehe unten) und braucht die
+   Definitionen nicht. ical4j würde jeden Block bei jedem Parse in eigene
+   Zonenregeln übersetzen (rund 3,7 MB kurzlebige Objekte pro Ressource, und
+   jede Ressource wird bei jedem Poll neu geparst) und dafür eine ID aus
+   seinem prozessweiten, begrenzten Pool eigener Zonen-IDs belegen (1500 per
+   Default). Ein Poll über einen großen Kalender kann diesen Pool erschöpfen,
+   bevor der Garbage Collector IDs zurückgibt.
 
 ## Mapping `VEVENT` → `SourceEvent`
 
@@ -328,13 +336,21 @@ Trägt der Master ein `RRULE`, wird die Serie ab `masterDtStart` expandiert
 Pflichtfelder auf jeder Master-, Override- oder Einzeltermin-Komponente;
 fehlen sie, wirft der Adapter eine `CalDavCalendarSourceException`
 (`requireDtStart`/`requireDtEnd`). Umwandlung in `ZonedDateTime`
-(`toZonedDateTime`):
+(`toZonedDateTime`), jeweils aus dem Rohwert der Property, wie er im ICS steht
+(`getValue()`, z. B. `20260201T100000`, `20260201T090000Z`, `20260201`;
+bei `EXDATE` kommagetrennt mehrere). ical4js aufgelöstes `getDate()` wird
+nicht verwendet, weil es die `TZID` über ical4js eigene Zonen-Registry
+auflösen würde.
 
 - Ist die Property `VALUE=DATE` (ganztägig), wird Mitternacht in der fest
   verdrahteten Zone `ALL_DAY_ZONE` (`Europe/Berlin`) verwendet und `allDay =
   true` gesetzt.
 - Andernfalls, trägt die Property ein `TZID`-Parameter, wird die
-  `ZonedDateTime` mit dieser `ZoneId` gebaut (`ZoneId.of(tzId)`).
+  `ZonedDateTime` mit dieser `ZoneId` gebaut (`ZoneId.of(tzId)`). Ist die
+  `TZID` keine `java.time`-Zone (z. B. ein Windows-Zonenname wie
+  `W. Europe Standard Time`), wirft der Adapter eine
+  `CalDavCalendarSourceException`; die betroffene `UID`-Gruppe wird
+  übersprungen (siehe ADR-012), die übrigen Termine werden weiter gelesen.
 - Andernfalls, falls die Property als UTC markiert ist (`Z`-Suffix), wird
   `ZoneOffset.UTC` verwendet.
 - Fehlen alle drei (weder `VALUE=DATE` noch `TZID` noch UTC-Designator),

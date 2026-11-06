@@ -4772,6 +4772,9 @@
       "type": "net.fortuna.ical4j.model.DefaultZoneRulesProvider"
     },
     {
+      "type": "net.fortuna.ical4j.model.TimeZoneRegistryImpl"
+    },
+    {
       "type": "net.fortuna.ical4j.util.MapTimeZoneCache",
       "methods": [
         {
