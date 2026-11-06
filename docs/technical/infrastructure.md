@@ -137,6 +137,15 @@ ENTRYPOINT ["sh", "-c", "exec ./business-calendar-relay $RELAY_NATIVE_OPTS"]
 
   Nur der `health`-Endpunkt ist exponiert, keine weiteren Actuator-Pfade.
 
+  Überschreitet ein Check sein Timeout, beendet Docker nur die Shell; `curl`
+  und `grep` werden zu Kindern von PID 1. Die Anwendung selbst räumt
+  beendete Kindprozesse nicht ab, deshalb setzt `docker-compose.yml`
+  `init: true`: Docker startet dann `tini` als PID 1, das diese Zombies
+  einsammelt. Ohne Init hinterlässt jeder abgebrochene Check zwei
+  Zombie-Prozesse, bis das Task-Limit des Containers erreicht ist und die
+  Anwendung keine Threads mehr starten kann
+  (`OutOfMemoryError: unable to create native thread`).
+
 ## Umgebungsvariablen — operative Sicht
 
 Die vollständige Konfigurationstabelle (inkl. `relay.calendars`-Feldern)
