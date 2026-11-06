@@ -17,7 +17,7 @@ COPY src ./src
 # context to generate AOT artifacts, so it needs the same required config as a real run,
 # even though nothing here ever connects anywhere during the build.
 # -Dnet.bytebuddy.experimental=true: bytebuddy 1.17.8 doesn't officially support Java 25
-# bytecode yet; both the native profile's hibernate-enhance-maven-plugin and its own
+# bytecode yet; both the native profile's hibernate-maven-plugin (enhance goal) and its own
 # build-time class-init trick need this to accept this project's Java 25 bytecode. See
 # docs/spikes/graalvm-native-image.md for the full history of this build's requirements.
 RUN SMTP_HOST=localhost SMTP_USERNAME=x SMTP_PASSWORD=x \

@@ -52,10 +52,11 @@ Das `native`-Maven-Profil (`pom.xml`, um Zeile 250) verkettet drei Schritte:
    Reachability-Metadata für `hibernate-core`, `h2`, `HikariCP`,
    `hibernate-validator`, `tomcat-embed-core`, `jaxb-runtime` und
    `commons-logging` aus dem GraalVM Reachability Metadata Repository.
-3. **`hibernate-enhance-maven-plugin`** (`org.hibernate.orm.tooling`,
-   Version `7.0.0.Beta1` — bewusst nicht `${hibernate.version}`, siehe
-   Kommentar in `pom.xml`: der Plugin-Artefakt hinkt `hibernate-core`s
-   Release-Kadenz hinterher) — Build-Time-Bytecode-Enhancement der
+3. **`hibernate-maven-plugin`** (`org.hibernate.orm`, Goal `enhance`,
+   Version `${hibernate.version}`) — muss exakt die `hibernate-core`-Version
+   haben: angereicherte Entities implementieren dessen `ManagedEntity`-Vertrag,
+   ein Enhancer anderer Version lässt Methoden abstrakt (`AbstractMethodError`
+   beim ersten Persistieren) — Build-Time-Bytecode-Enhancement der
    `@Entity`-Klassen (`enableLazyInitialization`, `enableDirtyTracking`,
    `enableAssociationManagement`). Ersetzt Hibernates sonst zur Laufzeit per
    ByteBuddy generierte `HibernateProxy`-Subklassen durch Logik, die direkt

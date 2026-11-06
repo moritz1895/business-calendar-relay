@@ -270,19 +270,15 @@
                          native-image cannot define classes at runtime at all, so without
                          this the app fails during JPA bootstrap the moment Hibernate
                          tries to generate the first entity's proxy, see
-                         docs/spikes/graalvm-native-image.md. version matches
-                         ${hibernate.version} as managed by spring-boot-starter-parent. -->
+                         docs/spikes/graalvm-native-image.md. The plugin version must be
+                         exactly ${hibernate.version} as managed by spring-boot-starter-parent:
+                         enhanced entities implement hibernate-core's ManagedEntity contract,
+                         and an enhancer from another version leaves its methods abstract
+                         (AbstractMethodError on the first persist). -->
                     <plugin>
-                        <groupId>org.hibernate.orm.tooling</groupId>
-                        <artifactId>hibernate-enhance-maven-plugin</artifactId>
-                        <!-- Deliberately not ${hibernate.version} (7.2.12.Final): the
-                             org.hibernate.orm.tooling:hibernate-enhance-maven-plugin
-                             artifact's own release cadence lags hibernate-core's,
-                             topping out at 7.0.0.Beta1 on Maven Central as of this
-                             spike. The enhancement bytecode format has historically
-                             stayed compatible across 7.x minors; flag for re-check if
-                             this plugin publishes a matching 7.2.x release later. -->
-                        <version>7.0.0.Beta1</version>
+                        <groupId>org.hibernate.orm</groupId>
+                        <artifactId>hibernate-maven-plugin</artifactId>
+                        <version>${hibernate.version}</version>
                         <executions>
                             <execution>
                                 <configuration>
