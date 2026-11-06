@@ -25,7 +25,7 @@
         <jspecify.version>1.0.0</jspecify.version>
         <archunit.version>1.4.0</archunit.version>
         <hexagonal-arch.version>1.0.0</hexagonal-arch.version>
-        <ical4j.version>4.1.1</ical4j.version>
+        <ical4j.version>4.4.0</ical4j.version>
     </properties>
 
     <dependencies>
