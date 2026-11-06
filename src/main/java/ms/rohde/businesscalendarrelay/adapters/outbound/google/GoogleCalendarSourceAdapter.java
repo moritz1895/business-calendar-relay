@@ -438,10 +438,10 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
             }
             var nextSyncTokenNode = root.get("nextSyncToken");
             if (nextSyncTokenNode != null && !nextSyncTokenNode.isNull()) {
-                nextSyncToken = nextSyncTokenNode.asText();
+                nextSyncToken = nextSyncTokenNode.asString();
             }
             var nextPageTokenNode = root.get("nextPageToken");
-            pageToken = (nextPageTokenNode != null && !nextPageTokenNode.isNull()) ? nextPageTokenNode.asText() : null;
+            pageToken = (nextPageTokenNode != null && !nextPageTokenNode.isNull()) ? nextPageTokenNode.asString() : null;
         } while (pageToken != null);
 
         return new EventsListResult(List.copyOf(items), nextSyncToken);
@@ -520,13 +520,13 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
     private CachedGoogleCalendarEvent toCached(JsonNode item) {
         var id = requireText(item, "id");
         var etagNode = item.get("etag");
-        var etag = (etagNode != null && !etagNode.isNull()) ? etagNode.asText() : "";
+        var etag = (etagNode != null && !etagNode.isNull()) ? etagNode.asString() : "";
         return new CachedGoogleCalendarEvent(id, etag, item.toString());
     }
 
     private boolean isCancelledStatus(JsonNode item) {
         var statusNode = item.get("status");
-        return statusNode != null && "cancelled".equals(statusNode.asText());
+        return statusNode != null && "cancelled".equals(statusNode.asString());
     }
 
     private List<SourceEvent> mapToSourceEvents(List<CachedGoogleCalendarEvent> cachedEvents) {
@@ -551,7 +551,7 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
 
         var recurringEventIdNode = item.get("recurringEventId");
         var recurring = recurringEventIdNode != null && !recurringEventIdNode.isNull();
-        var sourceUid = recurring ? recurringEventIdNode.asText() + "#" + originalStartKey(id, item) : id;
+        var sourceUid = recurring ? recurringEventIdNode.asString() + "#" + originalStartKey(id, item) : id;
 
         var startNode = requireNode(item, "start");
         var endNode = requireNode(item, "end");
@@ -560,7 +560,7 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
         var end = toZonedDateTime(endNode, allDay);
 
         var transparencyNode = item.get("transparency");
-        var busy = transparencyNode == null || !"transparent".equals(transparencyNode.asText());
+        var busy = transparencyNode == null || !"transparent".equals(transparencyNode.asString());
         var cancelled = isCancelledStatus(item);
 
         return new SourceEvent(sourceUid, start, end, allDay, busy, recurring, cancelled);
@@ -615,8 +615,8 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
         }
 
         var timeZoneNode = dateNode.get("timeZone");
-        if (timeZoneNode != null && !timeZoneNode.isNull() && !timeZoneNode.asText().isBlank()) {
-            return offsetDateTime.atZoneSameInstant(ZoneId.of(timeZoneNode.asText()));
+        if (timeZoneNode != null && !timeZoneNode.isNull() && !timeZoneNode.asString().isBlank()) {
+            return offsetDateTime.atZoneSameInstant(ZoneId.of(timeZoneNode.asString()));
         }
         return offsetDateTime.toZonedDateTime();
     }
@@ -632,11 +632,11 @@ public final class GoogleCalendarSourceAdapter implements CalendarSource {
 
     private String requireText(JsonNode node, String fieldName) {
         var field = node.get(fieldName);
-        if (field == null || field.isNull() || field.asText().isBlank()) {
+        if (field == null || field.isNull() || field.asString().isBlank()) {
             throw new GoogleCalendarSourceException(
                     "Google Calendar API response is missing required field '" + fieldName + "'");
         }
-        return field.asText();
+        return field.asString();
     }
 
     private JsonNode parseJson(String body) {
