@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,16 +16,14 @@ import org.junit.jupiter.api.Test;
  * Pins the exact ICS/iMIP text structure {@link ImipCalendarRenderer} must produce,
  * against the structural facts verified from the captured Nextcloud reference mails
  * (see {@code docs/reference/*.eml} and the project {@code CLAUDE.md}).
- *
- * <p>The renderer itself is not yet implemented (methods throw
- * {@link UnsupportedOperationException}), so every test below is expected to fail
- * red until that implementation lands.
  */
 class ImipCalendarRendererTest {
 
     private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
     private static final ZonedDateTime START = ZonedDateTime.of(2026, 7, 23, 10, 0, 0, 0, BERLIN);
     private static final ZonedDateTime END = START.plusHours(1);
+    private static final ZonedDateTime NAIROBI_START =
+            ZonedDateTime.of(2026, 7, 23, 10, 0, 0, 0, ZoneId.of("Africa/Nairobi"));
     private static final String ORGANIZER_EMAIL = "relay@example.com";
     private static final String ATTENDEE_EMAIL = "business@example.com";
     private static final Instant GENERATED_AT = Instant.parse("2026-07-23T08:00:00Z");
@@ -197,6 +196,43 @@ class ImipCalendarRendererTest {
         var ics = renderer.renderCancel(blockerEvent("relay-uid-11", 2), GENERATED_AT);
 
         assertThat(ics).contains(EXPECTED_BERLIN_VTIMEZONE);
+    }
+
+    @Test
+    void renderRequest_givenNonBerlinRegionZone_thenRendersUtcTimesWithoutVTimezoneOrTzid() {
+        var event = blockerEvent("relay-uid-16", 0, NAIROBI_START, NAIROBI_START.plusHours(1), ATTENDEE_EMAIL);
+
+        var ics = renderer.renderRequest(event, GENERATED_AT);
+        var lines = logicalLines(ics);
+
+        assertThat(requireLine(lines, "DTSTART")).isEqualTo("DTSTART:20260723T070000Z");
+        assertThat(requireLine(lines, "DTEND")).isEqualTo("DTEND:20260723T080000Z");
+        assertThat(ics).doesNotContain("VTIMEZONE").doesNotContain("TZID=");
+    }
+
+    @Test
+    void renderCancel_givenNonBerlinRegionZone_thenRendersUtcTimesWithoutVTimezoneOrTzid() {
+        var event = blockerEvent("relay-uid-17", 1, NAIROBI_START, NAIROBI_START.plusHours(1), ATTENDEE_EMAIL);
+
+        var ics = renderer.renderCancel(event, GENERATED_AT);
+        var lines = logicalLines(ics);
+
+        assertThat(requireLine(lines, "DTSTART")).isEqualTo("DTSTART:20260723T070000Z");
+        assertThat(requireLine(lines, "DTEND")).isEqualTo("DTEND:20260723T080000Z");
+        assertThat(ics).doesNotContain("VTIMEZONE").doesNotContain("TZID=");
+    }
+
+    @Test
+    void renderRequest_givenUtcOffsetZone_thenRendersUtcTimesWithoutTzidZ() {
+        var utcStart = ZonedDateTime.of(2026, 7, 23, 7, 0, 0, 0, ZoneOffset.UTC);
+        var event = blockerEvent("relay-uid-18", 0, utcStart, utcStart.plusHours(1), ATTENDEE_EMAIL);
+
+        var ics = renderer.renderRequest(event, GENERATED_AT);
+        var lines = logicalLines(ics);
+
+        assertThat(requireLine(lines, "DTSTART")).isEqualTo("DTSTART:20260723T070000Z");
+        assertThat(requireLine(lines, "DTEND")).isEqualTo("DTEND:20260723T080000Z");
+        assertThat(ics).doesNotContain("TZID=Z").doesNotContain("TZID=").doesNotContain("VTIMEZONE");
     }
 
     @Test
