@@ -16,11 +16,12 @@ services:
     init: true
     # The app runs as a GraalVM native-image binary (see Dockerfile,
     # docs/technical/native-image-build.md), not on the JVM -- no JIT tiers, no heap sized
-    # against the host's full RAM/core count the way an untuned JVM would. Measured RSS is
-    # ~75-85MB idle (Spring Boot + Hibernate + embedded H2, no REST surface beyond actuator
-    # health); 256m/1 CPU leaves comfortable headroom over that. Adjust after checking
-    # `docker stats` against real usage. Overridable per deployment via MEM_LIMIT/CPU_LIMIT.
-    mem_limit: ${MEM_LIMIT:-256m}
+    # against the host's full RAM/core count the way an untuned JVM would. With the
+    # Dockerfile's heap cap (RELAY_NATIVE_OPTS=-Xmx128m), measured RSS is ~70-110MB
+    # (Spring Boot + Hibernate + embedded H2, no REST surface beyond actuator health);
+    # 192m/1 CPU leaves headroom over the capped heap plus the mapped binary. Raise the
+    # limit together with -Xmx. Overridable per deployment via MEM_LIMIT/CPU_LIMIT.
+    mem_limit: ${MEM_LIMIT:-192m}
     cpus: ${CPU_LIMIT:-1.0}
     # Docker's default json-file log driver never rotates or expires log entries on its
     # own -- with `restart: unless-stopped`, the container is never removed, so the log

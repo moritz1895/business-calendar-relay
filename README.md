@@ -178,6 +178,9 @@ für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 | `RELAY_FROM_ADDRESS` | `From`/Envelope-From der iMIP-Mail — ebenfalls global. | — (erforderlich) |
 | `RELAY_REPLY_TO_ADDRESS` | `Reply-To` der iMIP-Mail (i. d. R. die menschliche Adresse des Organizers) — ebenfalls global. | — (erforderlich) |
 | `TZ` | Zeitzone, in der Log-Zeitstempel (siehe `log4j2.xml`) ausgegeben werden. Das native-image-Binary löst dies gegen seine eigene, zur Build-Zeit mitkompilierte tzdb auf — unabhängig vom `ubuntu:24.04`-Basisimage, das selbst kein `tzdata`-Paket enthält (siehe [`docs/technical/native-image-build.md`](docs/technical/native-image-build.md)). | `Europe/Berlin` |
+| `RELAY_NATIVE_OPTS` | Laufzeit-Flags für das native-image-Binary (nur Docker, siehe `Dockerfile`). Begrenzt den Heap; ohne Grenze wächst er bis 80 % von `MEM_LIMIT`, siehe [`docs/technical/infrastructure.md`](docs/technical/infrastructure.md). | `-Xmx128m` |
+| `MEM_LIMIT` | Speicherlimit des Containers (nur Docker Compose). Zusammen mit `-Xmx` in `RELAY_NATIVE_OPTS` anheben. | `192m` |
+| `CPU_LIMIT` | CPU-Limit des Containers (nur Docker Compose). | `1.0` |
 
 Lokale Werte gehören in eine `.env`-Datei (siehe `.env.example`, wird nicht
 versioniert).
@@ -419,8 +422,8 @@ GraalVM-native-image-Binary kompiliert, nicht zu einem JVM-Jar — `docker
 compose up --build`/`build-and-export-image.sh` dauern dadurch spürbar
 länger als ein reiner `mvn package`-Build (native-image braucht allein für
 Analyse und Kompilierung mehrere Minuten). Der Container startet dafür in
-Bruchteilen einer Sekunde und läuft idle mit ~75-85MB RSS statt ~400-450MB
-auf der JVM. Details zum Build, dem gelösten Hibernate/ByteBuddy-Problem und
+Bruchteilen einer Sekunde und läuft mit ~70-110MB RSS (Heap auf 128 MB begrenzt,
+Container-Limit 192 MB) statt ~400-450MB auf der JVM. Details zum Build, dem gelösten Hibernate/ByteBuddy-Problem und
 der zugrunde liegenden Invariante stehen in
 [`docs/technical/native-image-build.md`](docs/technical/native-image-build.md).
 
