@@ -23,6 +23,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.support.AbstractBeanDefinition;
+import org.springframework.context.annotation.Bean;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
@@ -69,6 +72,19 @@ class RelayWiringConfigurationTest {
             new RelayProperties.InitializationProperties(5, Duration.ofHours(1));
     private static final GoogleCredentials GOOGLE_CREDENTIALS =
             new GoogleCredentials("personal-google-account", "client-id", "client-secret", "refresh-token");
+
+    /**
+     * A destroy method named on {@code @Bean} is invoked reflectively, which the native image
+     * does not allow without extra metadata; the scheduler would then keep polling during
+     * shutdown. Shutdown must go through {@link DisposableBean} instead.
+     */
+    @Test
+    void relayTaskScheduler_givenBeanDeclaration_thenShutsDownThroughDisposableBeanNotReflection() throws NoSuchMethodException {
+        var factoryMethod = RelayWiringConfiguration.class.getDeclaredMethod("relayTaskScheduler", RelayProperties.class);
+
+        assertThat(factoryMethod.getReturnType()).isAssignableTo(DisposableBean.class);
+        assertThat(factoryMethod.getAnnotation(Bean.class).destroyMethod()).isEqualTo(AbstractBeanDefinition.INFER_METHOD);
+    }
 
     @Test
     void buildUseCases_givenThreeCalendarConfigs_thenReturnsThreeMappedUseCases() {
