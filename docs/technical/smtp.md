@@ -97,10 +97,15 @@ da der ICS-Text die Grundlage für den `text/calendar`-Teil ist:
   Quell-Event abgeleitet (titelloser Blocker per Domain-Vorgabe).
 - Jede Zeile wird nach RFC 5545 bei 75 Oktetts gefaltet (`fold(...)`,
   UTF-8-oktettgenau, respektiert Codepoint-Grenzen).
-- Ein vollständiger `VTIMEZONE`-Block für `Europe/Berlin` (inkl. `DAYLIGHT`/
-  `STANDARD`-Übergängen) wird in jede Nachricht eingebettet — Zeiten werden
-  über `DTSTART;TZID=...`/`DTEND;TZID=...` ausgedrückt, nicht als reines
-  `Z`/UTC, weil die Referenzmails das ebenfalls nie tun.
+- Liegt das Event in `Europe/Berlin`, wird ein vollständiger `VTIMEZONE`-Block
+  für `Europe/Berlin` (inkl. `DAYLIGHT`/`STANDARD`-Übergängen) eingebettet und
+  die Zeiten werden als Ortszeit über `DTSTART;TZID=Europe/Berlin:...`/
+  `DTEND;TZID=Europe/Berlin:...` ausgedrückt — wie in den Referenzmails.
+- Liegt das Event in jeder anderen Zone (andere Regions-IDs, feste Offsets,
+  UTC), entfällt der `VTIMEZONE`-Block, und `DTSTART`/`DTEND` werden als
+  UTC-Zeitpunkte ohne `TZID`-Parameter gerendert (z. B.
+  `DTSTART:20260723T070000Z`). So referenziert die Nachricht nie eine `TZID`
+  ohne zugehörige `VTIMEZONE`-Definition (RFC 5545).
 - `DTSTAMP` wird aus einem vom Aufrufer übergebenen `Instant` gerendert
   (`generatedAt`), nicht aus einer intern gelesenen Uhr — das hält den
   Renderer deterministisch testbar.

@@ -2,7 +2,9 @@ package ms.rohde.businesscalendarrelay.core.domain;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import ms.rohde.hexagonalarch.annotations.DomainService;
 
@@ -12,6 +14,12 @@ import ms.rohde.hexagonalarch.annotations.DomainService;
  *
  * <p>The rendered blocker is deliberately titleless: {@code SUMMARY} is always the
  * fixed literal {@code "Privater Blocker"}, never derived from the source event.
+ *
+ * <p>Events in {@code Europe/Berlin} embed a Berlin {@code VTIMEZONE} block and render
+ * {@code DTSTART}/{@code DTEND} as local times with {@code TZID=Europe/Berlin}. Events in
+ * any other zone (other region IDs, fixed offsets, UTC) render {@code DTSTART}/{@code DTEND}
+ * as UTC instants ({@code yyyyMMdd'T'HHmmss'Z'}) with neither a {@code TZID} parameter nor a
+ * {@code VTIMEZONE} block, so every referenced {@code TZID} is defined in the calendar.
  *
  * <p>{@code generatedAt} drives {@code DTSTAMP} and is supplied by the caller rather
  * than read from a clock here, keeping this domain service pure and deterministic.
@@ -27,6 +35,8 @@ public final class ImipCalendarRenderer {
 
     private static final DateTimeFormatter UTC_TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
+
+    private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
 
     private static final DateTimeFormatter LOCAL_TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
@@ -74,12 +84,15 @@ public final class ImipCalendarRenderer {
         appendFolded(ics, "PRODID:" + PRODID);
         appendFolded(ics, "CALSCALE:GREGORIAN");
         appendFolded(ics, "METHOD:" + method);
-        ics.append(BERLIN_VTIMEZONE).append(CRLF);
+        var berlinZone = BERLIN.equals(event.zone());
+        if (berlinZone) {
+            ics.append(BERLIN_VTIMEZONE).append(CRLF);
+        }
         appendFolded(ics, "BEGIN:VEVENT");
         appendFolded(ics, "UID:" + event.uid());
         appendFolded(ics, "DTSTAMP:" + UTC_TIMESTAMP_FORMAT.format(generatedAt));
-        appendFolded(ics, "DTSTART;TZID=" + event.zone() + ":" + LOCAL_TIMESTAMP_FORMAT.format(event.start()));
-        appendFolded(ics, "DTEND;TZID=" + event.zone() + ":" + LOCAL_TIMESTAMP_FORMAT.format(event.end()));
+        appendFolded(ics, dateTimeProperty("DTSTART", event.start(), berlinZone));
+        appendFolded(ics, dateTimeProperty("DTEND", event.end(), berlinZone));
         appendFolded(ics, "STATUS:CONFIRMED");
         appendFolded(ics, "SUMMARY:Privater Blocker");
         appendFolded(ics, "ORGANIZER:mailto:" + event.organizerEmail());
@@ -88,6 +101,13 @@ public final class ImipCalendarRenderer {
         appendFolded(ics, "END:VEVENT");
         appendFolded(ics, "END:VCALENDAR");
         return ics.toString();
+    }
+
+    private String dateTimeProperty(String name, ZonedDateTime dateTime, boolean berlinZone) {
+        if (berlinZone) {
+            return name + ";TZID=" + BERLIN.getId() + ":" + LOCAL_TIMESTAMP_FORMAT.format(dateTime);
+        }
+        return name + ":" + UTC_TIMESTAMP_FORMAT.format(dateTime.toInstant());
     }
 
     private void appendFolded(StringBuilder target, String logicalLine) {
