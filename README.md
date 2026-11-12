@@ -168,6 +168,9 @@ für den Grund (heutige Speicherlast ist vernachlässigbar) und den Umfang.
 | `SMTP_PORT` | SMTP-Port. Erwartet implizites TLS ("SMTP + SSL/TLS"), nicht STARTTLS — siehe `docs/technical/smtp.md` | `465` |
 | `SMTP_USERNAME` | SMTP-Benutzername | — (erforderlich) |
 | `SMTP_PASSWORD` | SMTP-Passwort | — (erforderlich) |
+| `SPRING_MAIL_PROPERTIES_MAIL_SMTP_CONNECTIONTIMEOUT` | Timeout für den SMTP-Verbindungsaufbau in Millisekunden | `30000` |
+| `SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT` | Lese-Timeout in Millisekunden, auch für die Server-Antwort nach `DATA`. Zu kurz gewählt führt er zu wiederholt zugestellten Einladungen, siehe `docs/technical/smtp.md` | `60000` |
+| `SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT` | Schreib-Timeout in Millisekunden | `60000` |
 | `STATE_STORE_DATA_DIR` | Verzeichnis für die eingebettete, dateibasierte H2-Datenbank hinter `StateStore` (muss neustartfest sein — in Docker als Volume mounten) | `./data` |
 | `RELAY_POLL_INTERVAL` | Intervall, in dem **jeder** konfigurierte Quellkalender abgefragt wird (Spring-`Duration`-Syntax, z. B. `5m`, `300s`) | `5m` |
 | `RELAY_RECURRING_EVENT_HORIZON` | Wie weit ein Vorkommen eines wiederkehrenden Quelltermins in der Zukunft liegen darf, um noch erstmals als Blocker angelegt zu werden — gilt **einheitlich** für jeden konfigurierten Quellkalender (ISO-8601-`Period`-Syntax, z. B. `P6M`, `P90D`). Einzeltermine sind davon nicht betroffen, siehe [`docs/domain.md`](docs/domain.md). | `P6M` |
