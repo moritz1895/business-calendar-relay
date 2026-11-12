@@ -177,9 +177,9 @@ spring:
           auth: true
           ssl:
             enable: true
-          connectiontimeout: 3000
-          timeout: 3000
-          writetimeout: 3000
+          connectiontimeout: 30000
+          timeout: 60000
+          writetimeout: 60000
 ```
 
 **Implizites TLS (`ssl.enable`), nicht STARTTLS.** Die Verbindung wird
@@ -203,6 +203,19 @@ Die drei `*timeout`-Werte (Millisekunden) verhindern, dass ein
 unerreichbarer oder feuerwallter SMTP-Host den aufrufenden Poll-Zyklus
 unbegrenzt blockiert — ohne sie hing ein einzelner Verbindungsversuch
 beobachtet bis zu ~300000ms (5 Minuten).
+
+Der Lese-Timeout (`timeout`) gilt auch für die Antwort des Servers auf das
+Ende von `DATA`. Provider wie netcup lassen sich damit für Spam- und
+Virenprüfung mehrere Sekunden Zeit. Die Mail ist zu diesem Zeitpunkt bereits
+angenommen und wird zugestellt. Läuft der Timeout trotzdem ab, wertet der
+Relay den Versand als fehlgeschlagen, speichert keinen `RelayState` und
+sendet dieselbe Einladung bei jedem folgenden Poll erneut. Der Wert ist
+deshalb großzügig gewählt: RFC 5321 empfiehlt für diesen Schritt 10 Minuten,
+60 s decken die beobachteten Verzögerungen ab und begrenzen trotzdem eine
+hängende Verbindung. Überschreiben lassen sich alle drei Werte per
+`SPRING_MAIL_PROPERTIES_MAIL_SMTP_CONNECTIONTIMEOUT`,
+`SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT` und
+`SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT`.
 
 `SmtpBlockerSinkAdapter` bekommt einen fertig konfigurierten
 `JavaMailSender` (Spring-Boot-Autokonfiguration aus
